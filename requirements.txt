@@ -1,0 +1,8 @@
+# requirements.txt
+aiogram>=3.0
+beautifulsoup4
+requests
+schedule
+python-dotenv
+aiohttp
+aiosqlite

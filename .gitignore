@@ -8,3 +8,5 @@ venv/
 .venv/
 *.log
 *.sqlite
+.env
+cache/

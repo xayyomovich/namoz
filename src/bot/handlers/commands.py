@@ -3,89 +3,154 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from src.bot.states.location import LocationState
-from src.bot.keyboards.navigation import get_navigation_keyboard
-from src.bot.utils import reminders
-from src.bot.utils.reminders import schedule_reminders
+from src.bot.keyboards.navigation import get_main_keyboard, get_settings_keyboard, get_location_keyboard
+from src.bot.utils.reminders import schedule_reminders, update_main_message
 from src.scraping.prayer_times import scrape_prayer_times
-from datetime import datetime
+from src.config.settings import LOCATION_MAP, RAMADAN_2025, DATABASE_PATH
+from datetime import datetime, timedelta
+import aiosqlite
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 async def start_command(message: types.Message):
-    """Handle /start command (green interface)."""
+    """Handle /start command."""
     chat_id = message.chat.id
-    # Call scrape_prayer_times synchronously, not with await
-    times = scrape_prayer_times(chat_id)
+    username = message.from_user.username or message.from_user.first_name
+    await save_user(chat_id, username)
 
-    if not times:
-        await message.answer("Error fetching prayer times. Try again later.")
-        return
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute('SELECT region FROM users WHERE chat_id = ?', (chat_id,))
+        region = await cursor.fetchone()
 
-    # Get current time to determine next prayer
-    current_time = datetime.now().strftime("%H:%M")
-    next_prayer = None
-    next_time = None
+    welcome_text = "Assalomu alaykum! Welcome to Islom.uz Prayer Times Bot. Get daily prayer times and Ramadan calendar based on your location. Choose your city:"
+    await message.answer(welcome_text, reply_markup=get_location_keyboard())
+    privacy_text = "Biz sizning chat ID va username'ingizni olamiz."
+    await message.answer(privacy_text, reply_markup=get_main_keyboard())
 
-    for prayer, time in times['prayer_times'].items():
-        if time > current_time:
-            next_prayer = prayer
-            next_time = time
-            break
-    if not next_prayer:  # If no future prayer today, use tomorrow's Fajr
-        times_erta = scrape_prayer_times(chat_id, day_type='erta')
-        if not times_erta:
-            await message.answer("Error fetching tomorrow's prayer times.")
-            return
-        next_prayer = 'Bomdod'
-        next_time = times_erta['prayer_times']['Bomdod']
+    # If region is set, send main message immediately
+    if region:
+        await send_main_message(message, region[0])  # Pass the region value
 
-    # Format message like the green interface
-    current_time_str = datetime.now().strftime("%I:%M %p")  # e.g., "4:46 AM"
-    message_text = (
-        f"🕌 *Namoaz vaqtlari*\n"
-        f"👉 {times['date']} 👈\n"
-        f"{times['islamic_date']}\n"
-        f"*{current_time_str}* ⏰\n"
-        f"*{next_prayer}*, {next_time} 🔔"
-    )
-    await message.answer(message_text, parse_mode='Markdown')
-    await message.answer("Navigate or view options:", reply_markup=get_navigation_keyboard())
+
+async def save_user(chat_id, username):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        # Optional: Verify table existence for debugging
+        cursor = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+        table_exists = await cursor.fetchone()
+        if not table_exists:
+            print(f"Error: 'users' table does not exist in {DATABASE_PATH}")
+            raise Exception("Users table not found!")
+
+        await db.execute(
+            'INSERT OR REPLACE INTO users (chat_id, username) VALUES (?, ?) '
+            'ON CONFLICT(chat_id) DO UPDATE SET username = ?',
+            (chat_id, username, username)
+        )
+        await db.commit()
 
 
 async def set_location_command(message: types.Message, state: FSMContext):
     """Handle /set_location to ask for user location."""
-    await message.answer("Please enter your city (e.g., Tashkent) or region code (e.g., 27):")
+    await message.answer("Iltimos, shahringizni tanlang (masalan, Тошкент):", reply_markup=get_location_keyboard())
     await state.set_state(LocationState.waiting_for_location)
 
 
 async def handle_location(message: types.Message, state: FSMContext):
-    """Handle location input."""
+    """Handle location input via callback or text."""
     user_input = message.text
-    from src.config.settings import LOCATION_MAP
-    region = LOCATION_MAP.get(user_input, user_input)  # Try to match city or use as region code
+    region = LOCATION_MAP.get(user_input)
+    if not region:
+        await message.answer("Noma’lum shahar! Iltimos, ro‘yxatdan shaharni tanlang.", reply_markup=get_location_keyboard())
+        return
     await state.update_data(region=region)
-    await message.answer(f"Location set to {user_input}! Use /start to see prayer times.")
+    await message.answer(f"Joylashuv {user_input} ga o‘rnatildi!", reply_markup=get_main_keyboard())
     await state.clear()
+    await send_main_message(message)
 
 
-async def toggle_reminder_command(message: types.Message):
-    """Toggle reminders for a specific prayer."""
+async def delete_data_command(message: types.Message):
+    """Handle /delete_data to remove user data."""
     chat_id = message.chat.id
-    if not message.text.split()[1:]:
-        await message.answer("Usage: /toggle_reminder [prayer]\nE.g., /toggle_reminder Bomdod")
+    async with aiosqlite.connect('src/database/prayer_times.db') as db:
+        await db.execute('DELETE FROM users WHERE chat_id = ?', (chat_id,))
+        await db.commit()
+    await message.answer("Sizning ma’lumotlaringiz o‘chirildi! /start bilan qayta boshlang.", reply_markup=get_main_keyboard())
+
+
+async def send_main_message(message, region, day_type='bugun'):
+    """Send or update the main message with prayer times."""
+    chat_id = message.chat.id
+    times = scrape_prayer_times(region, datetime.now().month, day_type)
+    if not times or not times['prayer_times']:
+        await message.answer("Namoz vaqtlarini olishda xatolik yuz berdi. Keyinroq urinib ko‘ring.")
         return
 
-    prayer = message.text.split()[1].capitalize()
-    if prayer not in ['Bomdod', 'Quyosh', 'Peshin', 'Asr', 'Shom', 'Xufton']:
-        await message.answer("Invalid prayer name!")
-        return
+    current_time = datetime.now().strftime("%I:%M %p")
+    next_prayer_time = min((t for t in times['prayer_times'].values() if t != 'N/A' and t > current_time), default=None)
+    if not next_prayer_time:
+        times_erta = scrape_prayer_times(region, datetime.now().month, 'erta')
+        if times_erta and times_erta['prayer_times'].get('Bomdod'):
+            next_prayer = 'Bomdod'
+            next_prayer_time = times_erta['prayer_times']['Bomdod']
+        else:
+            next_prayer = 'Bomdod'
+            next_prayer_time = 'N/A'
+    else:
+        next_prayer = [p for p, t in times['prayer_times'].items() if t == next_prayer_time and t != 'N/A'][0]
 
-    reminders.setdefault(chat_id, {})[prayer] = not reminders.get(chat_id, {}).get(prayer, False)
-    status = "enabled" if reminders[chat_id][prayer] else "disabled"
-    await message.answer(f"Reminders for {prayer} {status}! 🔔🔕")
+    time_until = datetime.strptime(next_prayer_time, "%H:%M") - datetime.strptime(current_time, "%I:%M %p") if next_prayer_time != 'N/A' else timedelta(0)
+    if time_until.total_seconds() < 0 and next_prayer != 'Bomdod' and next_prayer_time != 'N/A':
+        times_erta = scrape_prayer_times(region, datetime.now().month, 'erta')
+        if times_erta and times_erta['prayer_times'].get('Bomdod'):
+            next_prayer = 'Bomdod'
+            next_prayer_time = times_erta['prayer_times']['Bomdod']
+        else:
+            next_prayer_time = 'N/A'
+        time_until = datetime.strptime(next_prayer_time, "%H:%M") - datetime.now().replace(hour=0, minute=0, second=0) + timedelta(days=1) if next_prayer_time != 'N/A' else timedelta(0)
+
+    minutes, seconds = divmod(abs(time_until.total_seconds()), 60)
+    hours, minutes = divmod(minutes, 60)
+    countdown = f"{int(hours)}:{int(minutes):02d}" if hours > 0 else f"{int(minutes):02d}:{int(seconds):02d}"
+
+    if datetime.now() in RAMADAN_2025:
+        iftar_time = times['prayer_times'].get('Shom', 'N/A')
+        if iftar_time != 'N/A':
+            iftar_until = datetime.strptime(iftar_time, "%H:%M") - datetime.now().replace(second=0, microsecond=0)
+            if iftar_until.total_seconds() < 0:
+                sahar_time = times_erta['prayer_times'].get('Bomdod', 'N/A') if times_erta else 'N/A'
+                if sahar_time != 'N/A':
+                    sahar_until = datetime.strptime(sahar_time, "%H:%M") - datetime.now().replace(second=0, microsecond=0) + timedelta(days=1)
+                    iftar_text = f"Saharlikgacha - {int(sahar_until.total_seconds() // 3600)}:{int((sahar_until.total_seconds() % 3600) // 60):02d} qoldi"
+                else:
+                    iftar_text = "Saharlik vaqti mavjud emas"
+            else:
+                iftar_text = f"Iftorlikgacha - {int(iftar_until.total_seconds() // 3600)}:{int((iftar_until.total_seconds() % 3600) // 60):02d} qoldi"
+        else:
+            iftar_text = "Iftorlik vaqti mavjud emas"
+    else:
+        iftar_text = f"Keyingi namozgacha - {countdown} qoldi"
+
+    message_text = (
+        f"📍 {times['location']}\n"
+        f"🗓 {times['date']}\n"
+        f"☪️ {times['islamic_date']}\n"
+        f"------------------------\n"
+        f"{iftar_text} ⏰\n"
+        f"------------------------\n"
+        f"{next_prayer} vaqti\n"
+        f"**{next_prayer_time} да**\n"
+        f"- {countdown} qoldi ⏰\n"
+        f"------------------------"
+    )
+    sent_message = await message.answer(message_text, parse_mode='Markdown')
+    await update_main_message(chat_id, sent_message.message_id, times, next_prayer, next_prayer_time)  # Pass full times dict
 
 
 def register_commands(dp: Dispatcher):
+    """Register command handlers with the Dispatcher."""
     dp.message.register(start_command, Command("start"))
     dp.message.register(set_location_command, Command("set_location"))
     dp.message.register(handle_location, LocationState.waiting_for_location, F.text)
-    dp.message.register(toggle_reminder_command, Command("toggle_reminder"))
+    dp.message.register(delete_data_command, Command("delete_data"))
