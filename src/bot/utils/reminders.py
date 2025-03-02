@@ -5,7 +5,7 @@ import time
 import threading
 from aiogram import Bot
 
-from src.bot.handlers.commands import logger
+# from src.bot.handlers.commands import logger
 from src.config.settings import BOT_TOKEN, RAMADAN_2025, DATABASE_PATH
 from datetime import datetime, timedelta
 import aiosqlite

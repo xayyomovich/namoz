@@ -114,21 +114,23 @@ async def send_main_message(message, region, day_type='bugun'):
     hours, minutes = divmod(minutes, 60)
     countdown = f"{int(hours)}:{int(minutes):02d}" if hours > 0 else f"{int(minutes):02d}:{int(seconds):02d}"
 
-    if datetime.now() in RAMADAN_2025:
-        iftar_time = times['prayer_times'].get('Shom', 'N/A')
-        if iftar_time != 'N/A':
-            iftar_until = datetime.strptime(iftar_time, "%H:%M") - datetime.now().replace(second=0, microsecond=0)
-            if iftar_until.total_seconds() < 0:
-                sahar_time = times_erta['prayer_times'].get('Bomdod', 'N/A') if times_erta else 'N/A'
-                if sahar_time != 'N/A':
-                    sahar_until = datetime.strptime(sahar_time, "%H:%M") - datetime.now().replace(second=0, microsecond=0) + timedelta(days=1)
-                    iftar_text = f"Saharlikgacha - {int(sahar_until.total_seconds() // 3600)}:{int((sahar_until.total_seconds() % 3600) // 60):02d} qoldi"
-                else:
-                    iftar_text = "Saharlik vaqti mavjud emas"
+    if datetime.now() in RAMADAN_2025:  # Updated to RAMADAN_DATES
+        bomdod_time = times['prayer_times'].get('Bomdod', 'N/A')
+        shom_time = times['prayer_times'].get('Shom', 'N/A')
+        if bomdod_time != 'N/A' and shom_time != 'N/A':
+            bomdod_dt = datetime.strptime(bomdod_time, "%H:%M")
+            shom_dt = datetime.strptime(shom_time, "%H:%M")
+            current_dt = datetime.now().replace(second=0, microsecond=0)
+            next_bomdod_dt = bomdod_dt + timedelta(days=1) if current_dt > bomdod_dt else bomdod_dt
+
+            if current_dt < shom_dt:
+                time_until_iftar = shom_dt - current_dt
+                iftar_text = f"Iftorlikgacha - {int(time_until_iftar.total_seconds() // 3600)}:{int((time_until_iftar.total_seconds() % 3600) // 60):02d} qoldi"
             else:
-                iftar_text = f"Iftorlikgacha - {int(iftar_until.total_seconds() // 3600)}:{int((iftar_until.total_seconds() % 3600) // 60):02d} qoldi"
+                time_until_sahar = next_bomdod_dt - current_dt
+                iftar_text = f"Saharlikgacha - {int(time_until_sahar.total_seconds() // 3600)}:{int((time_until_sahar.total_seconds() % 3600) // 60):02d} qoldi"
         else:
-            iftar_text = "Iftorlik vaqti mavjud emas"
+            iftar_text = "Saharlik yoki Iftorlik vaqti mavjud emas"
     else:
         iftar_text = f"Keyingi namozgacha - {countdown} qoldi"
 
