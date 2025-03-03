@@ -6,7 +6,7 @@ import threading
 from aiogram import Bot
 
 # from src.bot.handlers.commands import logger
-from src.config.settings import BOT_TOKEN, RAMADAN_2025, DATABASE_PATH
+from src.config.settings import BOT_TOKEN, RAMADAN_DATES, DATABASE_PATH
 from datetime import datetime, timedelta
 import aiosqlite
 from src.scraping.prayer_times import scrape_prayer_times
@@ -33,7 +33,7 @@ async def update_main_message(chat_id, message_id, times, next_prayer, next_pray
         hours, minutes = divmod(minutes, 60)
         countdown = f"{int(hours)}:{int(minutes):02d}" if hours > 0 else f"{int(minutes):02d}:{int(seconds):02d}"
 
-        if datetime.now() in RAMADAN_2025:
+        if datetime.now() in RAMADAN_DATES:
             iftar_time = times['prayer_times'].get('Shom', 'N/A')
             if iftar_time != 'N/A':
                 iftar_until = datetime.strptime(iftar_time, "%H:%M") - datetime.now().replace(second=0, microsecond=0)
@@ -60,8 +60,8 @@ async def update_main_message(chat_id, message_id, times, next_prayer, next_pray
             f"{iftar_text} ⏰\n"
             f"------------------------\n"
             f"{next_prayer} vaqti\n"
-            f"**{next_prayer_time} да**\n"
-            f"- {countdown} qoldi ⏰\n"
+            f"**{next_prayer_time} da**\n"
+            f"- {countdown} ⏰qoldi\n"
             f"{reminder_text}\n"
             f"------------------------"
         )
@@ -73,7 +73,7 @@ async def update_main_message(chat_id, message_id, times, next_prayer, next_pray
                 await bot.delete_message(chat_id, message_id)
                 break
         except Exception as e:
-            logger.error(f"Error updating message: {e}")
+            schedule.logger.error(f"Error updating message: {e}")
         await asyncio.sleep(300)  # Update every 5 minutes
 
 
