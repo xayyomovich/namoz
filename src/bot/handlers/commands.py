@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from src.bot.states.location import LocationState
 from src.bot.keyboards.navigation import get_main_keyboard, get_settings_keyboard, get_location_keyboard
-from src.bot.utils.reminders import schedule_reminders, update_main_message, log_message
+from src.bot.utils.reminders import run_scheduler, update_main_message, log_message
 from src.scraping.prayer_times import scrape_prayer_times, fetch_cached_prayer_times
 from src.config.settings import LOCATION_MAP, RAMADAN_DATES, DATABASE_PATH
 from datetime import datetime, timedelta
