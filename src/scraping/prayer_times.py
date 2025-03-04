@@ -3,9 +3,9 @@ import json
 from bs4 import BeautifulSoup
 import requests
 from datetime import datetime
-from src.config.settings import REVERSE_LOCATION_MAP, LOCATION_MAP
+from src.config.settings import REVERSE_LOCATION_MAP
 
-UZBEK_WEEKDAYS_CYRILLIC_TO_LATIN = {
+UZBEK_WEEKDAYS = {
     'Душанба': 'Dushanba',
     'Сешанба': 'Seshanba',
     'Чоршанба': 'Chorshanba',
@@ -15,27 +15,42 @@ UZBEK_WEEKDAYS_CYRILLIC_TO_LATIN = {
     'Якшанба': 'Yakshanba'
 }
 
-UZBEK_MONTHS_CYRILLIC_TO_LATIN = {
-    'Январь': 'Yanvar',
-    'Февраль': 'Fevral',
-    'Март': 'Mart',
-    'Апрель': 'Aprel',
-    'Май': 'May',
-    'Июнь': 'Iyun',
-    'Июль': 'Iyul',
-    'Август': 'Avgust',
-    'Сентябрь': 'Sentabr',
-    'Октябрь': 'Oktabr',
-    'Ноябрь': 'Noyabr',
-    'Декабрь': 'Dekabr'
+UZBEK_MONTHS = {
+    'январь': 'Yanvar',
+    'февраль': 'Fevral',
+    'март': 'Mart',
+    'апрель': 'Aprel',
+    'май': 'May',
+    'июнь': 'Iyun',
+    'июль': 'Iyul',
+    'август': 'Avgust',
+    'сентябрь': 'Sentabr',
+    'октябрь': 'Oktabr',
+    'ноябрь': 'Noyabr',
+    'декабрь': 'Dekabr'
+}
+
+ISLAMIC_MONTHS = {
+    'ражаб': 'Rajab',
+    'шаъбон': "Sha'bon",
+    'Рамазон': 'Ramazon',
+    'шаввол': 'Shavvol',
+    'зулқаъда': 'Zulqada',
+    'зулҳижжа': 'Zulhijja',
+    'муҳаррам': 'Muharram',
+    'сафар': 'Safar',
+    'рабиъул аввал': 'Rabiu-l Avval',
+    'рабиъус сони': 'Rabius-Soni',
+    'жумадул аввал': 'Jumadul Avval',
+    'жумадис сони': 'Jumadis-Soni'
 }
 
 PRAYER_MAP = {
-    'Тонг (Саҳарлик)': 'Bomdod',
+    'Тонг(Саҳарлик)': 'Bomdod (Saharlik)',
     'Қуёш': 'Quyosh',
     'Пешин': 'Peshin',
     'Аср': 'Asr',
-    'Шом (Ифтор)': 'Shom',
+    'Шом(Ифтор)': 'Shom (Iftorlik)',
     'Хуфтон': 'Xufton'
 }
 
@@ -67,49 +82,84 @@ def scrape_prayer_times(region, month=None, day_type='bugun'):
     url = f'https://islom.uz/vaqtlar/{region}/{month}'
     try:
         response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        html_text = response.text
-        soup = BeautifulSoup(html_text, 'html.parser')
+        response.raise_for_status()  # raise_for_status() - checks whether the HTTP request was successful. If the request failed, it raises an exception.
+        html_text = response.text   # response.text - returns the body of the webpage as a Unicode string.
+        soup = BeautifulSoup(html_text, 'html.parser')   # 'html.parser' is the built-in Python HTML parser
 
         # Find the table headers
         headers = [th.text.strip() for th in soup.select('th.header_table')]
-        if not headers or len(headers) < 8:  # Headers should include day, weekday, and 6 prayer times
+        if not headers or len(headers) < 9:
             return None
+        # print(headers)   # ['Рамазон', 'март', 'Ҳафта куни', 'Тонг(Саҳарлик)', 'Қуёш', 'Пешин', 'Аср', 'Шом(Ифтор)', 'Хуфтон']
+
 
         # Find the row for the specified day
         day_row = soup.find('tr', class_=day_classes[day_type])
         if not day_row:
             return None
+        # print(day_row)
+        """
+        <tr class="p_day bugun">
+        <td>3</td>
+        <td>3</td>
+        <td>Душанба</td>
+        <td class="sahar bugun">05:24</td>
+        <td>06:42</td>
+        <td>12:23</td>
+        <td>16:20</td>
+        <td class="iftor bugun">18:07</td>
+        <td>19:22</td>
+        </tr>-
+        """
 
         # Extract cells and date information
         cells = day_row.find_all('td')
-        if len(cells) < 8:  # Should have day, weekday, and 6 prayer times
+        if len(cells) < 9:  # Should have day, weekday, and 6 prayer times
             return None
+        # print(cells)
+        """
+            [<td>3</td>, <td>3</td>, <td>Душанба</td>, <td class="sahar bugun">05:24</td>, <td>06:42</td>, <td>12:23</td>, <td>16:20</td>, <td class="iftor bugun">18:07</td>, <td>19:22</td>]
+        """
+
 
         # Extract basic date information
-        day_number = cells[0].text.strip()
-        day_of_week_cyrillic = cells[1].text.strip()
-        day_of_week = UZBEK_WEEKDAYS_CYRILLIC_TO_LATIN.get(day_of_week_cyrillic, day_of_week_cyrillic)
+
+        day_number = cells[1].text.strip()
+        day_of_week_cyrillic = cells[2].text.strip()
+        day_of_week = UZBEK_WEEKDAYS.get(day_of_week_cyrillic, day_of_week_cyrillic)
+        # print(f"<<<<<<<<day number--{day_number}>>>>>>>>")   #4
+        # print(f">>>>>>>>day_of_week_cyrillic--{day_of_week_cyrillic}<<<<<<<<")    #Чоршанба
+        # print(f">>>>>>>>day_of_week--{day_of_week}<<<<<<<<")    # Chorshanba
+
 
         # Get month name from the page title or fallback to current month
-        month_elem = soup.select_one('div.region_name')
-        gregorian_month_cyrillic = month_elem.text.strip().split()[-1] if month_elem else ""
-        gregorian_month = UZBEK_MONTHS_CYRILLIC_TO_LATIN.get(gregorian_month_cyrillic,
-                                                             datetime.now().strftime('%B'))
+        # month_elem = [th.text.strip() for th in soup.select('th.header_table')]
+        gregorian_month_cyrillic = headers[1] if headers else ""
+        gregorian_month = UZBEK_MONTHS.get(gregorian_month_cyrillic, datetime.now().strftime('%B'))
+        # print(f"<<<<<<<<month_elem--{headers}>>>>>>>>")   #   ['Рамазон', 'март', 'Ҳафта куни', 'Тонг(Саҳарлик)', 'Қуёш', 'Пешин', 'Аср', 'Шом(Ифтор)', 'Хуфтон']
+        # print(f">>>>>>>>gregorian_month_cyrillic--{gregorian_month_cyrillic}<<<<<<<<")    #  март
+        # print(f">>>>>>>>gregorian_month--{gregorian_month}<<<<<<<<")    # Mart
+
+
 
         # Get Islamic date if available
-        islamic_date_elem = soup.select_one('div.hijri')
-        islamic_date = islamic_date_elem.text.strip() if islamic_date_elem else f"{datetime.now().day} Sha'bon, 1446"
+        islamic_month_cyrillic = headers[0] if headers else ""
+        islamic_month = ISLAMIC_MONTHS.get(islamic_month_cyrillic, '')
+        islamic_date_number = cells[0].text.strip()
+        # print(f">>>>>>>>islamic_date_element--{islamic_month}<<<<<<<<")  #Ramazon
+        # print(f">>>>>>>>islamic_date--{islamic_date_number}<<<<<<<<")    #4
+
 
         # Map prayer times
         prayer_times = {}
-        for i, header in enumerate(headers[2:8], 0):  # First 2 are day and weekday, next 6 are prayer times
+        for i, header in enumerate(headers[3:9], 0):
             prayer_name = PRAYER_MAP.get(header.strip(), f"Prayer{i + 1}")
-            if i + 2 < len(cells):
-                time_value = cells[i + 2].text.strip()
+            if i + 3 < len(cells):
+                time_value = cells[i + 3].text.strip()
                 prayer_times[prayer_name] = time_value if time_value else "N/A"
             else:
                 prayer_times[prayer_name] = "N/A"
+        # print(prayer_times)   # {'Bomdod (Saharlik)': '05:55', 'Quyosh': '07:11', 'Peshin': '12:54', 'Asr': '16:54', 'Shom (Iftorlik)': '18:41', 'Xufton': '19:54'}
 
         # Determine city name from region code
         city = REVERSE_LOCATION_MAP.get(region, 'Noma\'lum shahar')
@@ -119,8 +169,8 @@ def scrape_prayer_times(region, month=None, day_type='bugun'):
 
         return {
             'location': city,
-            'date': f"{day_of_week}, {day_number} {gregorian_month}",
-            'islamic_date': islamic_date,
+            'date': f"{day_of_week}, {day_number}-{gregorian_month}",
+            'islamic_date': f"{islamic_date_number} {islamic_month}, 1446",
             'prayer_times': prayer_times,
             'day_type': day_type,
             'next_prayer': next_prayer,
@@ -205,3 +255,5 @@ async def fetch_cached_prayer_times(region, date_str):
             return json.loads(result[0])
         else:
             return None
+
+

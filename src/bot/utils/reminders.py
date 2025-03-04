@@ -145,9 +145,9 @@ async def _update_message_task(chat_id):
             f"{iftar_text} ⏰\n"
             f"------------------------\n"
             f"{next_prayer} vaqti\n"
-            f"**{next_prayer_time} да**\n"
-            f"- {countdown} qoldi ⏰\n"
-            f"{reminder_text}\n"
+            f"**{next_prayer_time} da**\n"
+            f"- {countdown} ⏰qoldi\n"
+            f"{reminder_text}"
             f"------------------------"
         )
 
