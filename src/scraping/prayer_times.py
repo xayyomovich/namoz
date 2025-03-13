@@ -1,7 +1,8 @@
 import json
+import aiohttp
 import logging
 from bs4 import BeautifulSoup
-import requests
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from datetime import datetime, timedelta
 import aiosqlite
 from src.config.settings import DATABASE_PATH, REVERSE_LOCATION_MAP, LOCATION_MAP
@@ -53,7 +54,8 @@ PRAYER_MAP = {
 
 
 ## Scrape prayer times from islom.uz (your original function, now enhanced for monthly scraping)
-def scrape_prayer_times(region, month=None, day_type='bugun'):
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10), retry=retry_if_exception_type(aiohttp.ClientError))
+async def scrape_prayer_times(region, month=None, day_type='bugun'):
     """
     Scrape prayer times from islom.uz for a region.
     Args:
@@ -82,150 +84,157 @@ def scrape_prayer_times(region, month=None, day_type='bugun'):
 
     url = f'https://islom.uz/vaqtlar/{region}/{month}'
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()  # raise_for_status() - checks whether the HTTP request was successful. If the request failed, it raises an exception.
-        html_text = response.text  # response.text - returns the body of the webpage as a Unicode string.
-        soup = BeautifulSoup(html_text, 'html.parser')  # 'html.parser' is the built-in Python HTML parser
+        # Use aiohttp for asynchronous HTTP request
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=10) as response:
+                response.raise_for_status()  # raise_for_status() - checks whether the HTTP request was successful. If the request failed, it raises an exception.
+                html_text = await response.text()  # response.text - returns the body of the webpage as a Unicode string.
+                soup = BeautifulSoup(html_text, 'html.parser')  # 'html.parser' is the built-in Python HTML parser
 
-        # Find the table headers
-        headers = [th.text.strip() for th in soup.select('th.header_table')]
-        if not headers or len(headers) < 9:
-            return None
-        # print(headers)   # ['Рамазон', 'март', 'Ҳафта куни', 'Тонг(Саҳарлик)', 'Қуёш', 'Пешин', 'Аср', 'Шом(Ифтор)', 'Хуфтон']
+                # Find the table headers
+                headers = [th.text.strip() for th in soup.select('th.header_table')]
+                if not headers or len(headers) < 9:
+                    return None
+                # print(headers)   # ['Рамазон', 'март', 'Ҳафта куни', 'Тонг(Саҳарлик)', 'Қуёш', 'Пешин', 'Аср', 'Шом(Ифтор)', 'Хуфтон']
 
-        if day_type == 'month':
-            # Scrape all days in the month
-            all_rows = soup.find_all('tr', class_=lambda c: c and 'p_day' in c)
-            if not all_rows:
-                return None
-            monthly_data = {}
-            for row in all_rows:
-                cells = row.find_all('td')
-                if len(cells) < 9:  # Should have day, weekday, and 6 prayer times
-                    continue
-                # print(cells)
-                """
-                [<td>1</td>, <td>1</td>, <td>Душанба</td>, <td class="sahar bugun">05:39</td>, <td>06:58</td>, <td>12:35</td>, <td>16:29</td>, <td class="iftor bugun">18:17</td>, <td>19:32</td>]
-                """
+                if day_type == 'month':
+                    # Scrape all days in the month
+                    all_rows = soup.find_all('tr', class_=lambda c: c and 'p_day' in c)
+                    print(all_rows)
+                    if not all_rows:
+                        return None
+                    monthly_data = {}
+                    for row in all_rows:
+                        cells = row.find_all('td')
+                        if len(cells) < 9:  # Should have day, weekday, and 6 prayer times
+                            continue
+                        # print(cells)
+                        """
+                        [<td>1</td>, <td>1</td>, <td>Душанба</td>, <td class="sahar bugun">05:39</td>, <td>06:58</td>, <td>12:35</td>, <td>16:29</td>, <td class="iftor bugun">18:17</td>, <td>19:32</td>]
+                        """
 
-                # Extract basic date information
-                day_number = cells[1].text.strip()
-                day_of_week_cyrillic = cells[2].text.strip()
-                day_of_week = UZBEK_WEEKDAYS.get(day_of_week_cyrillic, day_of_week_cyrillic)
-                # print(f"<<<<<<<<day number--{day_number}>>>>>>>>")   # 1
-                # print(f">>>>>>>>day_of_week_cyrillic--{day_of_week_cyrillic}<<<<<<<<")    # Душанба
-                # print(f">>>>>>>>day_of_week--{day_of_week}<<<<<<<<")    # Dushanba
+                        # Extract basic date information
+                        day_number = cells[1].text.strip()
+                        day_of_week_cyrillic = cells[2].text.strip()
+                        day_of_week = UZBEK_WEEKDAYS.get(day_of_week_cyrillic, day_of_week_cyrillic)
+                        # print(f"<<<<<<<<day number--{day_number}>>>>>>>>")   # 1
+                        # print(f">>>>>>>>day_of_week_cyrillic--{day_of_week_cyrillic}<<<<<<<<")    # Душанба
+                        # print(f">>>>>>>>day_of_week--{day_of_week}<<<<<<<<")    # Dushanba
 
-                # Get month name from the page title
-                gregorian_month_cyrillic = headers[1] if headers else ""
-                gregorian_month = UZBEK_MONTHS.get(gregorian_month_cyrillic, datetime.now().strftime('%B'))
-                # print(f"<<<<<<<<month_elem--{headers}>>>>>>>>")   # ['Рамазон', 'март', 'Ҳафта куни', 'Тонг(Саҳарлик)', 'Қуёш', 'Пешин', 'Аср', 'Шом(Ифтор)', 'Хуфтон']
-                # print(f">>>>>>>>gregorian_month_cyrillic--{gregorian_month_cyrillic}<<<<<<<<")    # март
-                # print(f">>>>>>>>gregorian_month--{gregorian_month}<<<<<<<<")    # Mart
+                        # Get month name from the page title
+                        gregorian_month_cyrillic = headers[1] if headers else ""
+                        gregorian_month = UZBEK_MONTHS.get(gregorian_month_cyrillic, datetime.now().strftime('%B'))
+                        # print(f"<<<<<<<<month_elem--{headers}>>>>>>>>")   # ['Рамазон', 'март', 'Ҳафта куни', 'Тонг(Саҳарлик)', 'Қуёш', 'Пешин', 'Аср', 'Шом(Ифтор)', 'Хуфтон']
+                        # print(f">>>>>>>>gregorian_month_cyrillic--{gregorian_month_cyrillic}<<<<<<<<")    # март
+                        # print(f">>>>>>>>gregorian_month--{gregorian_month}<<<<<<<<")    # Mart
 
-                # Map prayer times
-                prayer_times = {}
-                for i, header in enumerate(headers[3:9], 0):
-                    # print(header)
-                    prayer_name = PRAYER_MAP.get(header.strip(), f"Lazy {i + 1}")
-                    # print(prayer_name)
-                    if i + 3 < len(cells):
-                        time_value = cells[i + 3].text.strip()
-                        prayer_times[prayer_name] = time_value if time_value else "N/A"
-                    else:
-                        prayer_times[prayer_name] = "N/A"
-                print(
-                    prayer_times)  # {'Bomdod (Saharlik)': '05:39', 'Quyosh': '06:58', 'Peshin': '12:35', 'Asr': '16:29', 'Shom (Iftorlik)': '18:17', 'Xufton': '19:32'}
+                        # Map prayer times
+                        prayer_times = {}
+                        for i, header in enumerate(headers[3:9], 0):
+                            # print(header)
+                            prayer_name = PRAYER_MAP.get(header.strip(), f"Lazy {i + 1}")
+                            # print(prayer_name)
+                            if i + 3 < len(cells):
+                                time_value = cells[i + 3].text.strip()
+                                prayer_times[prayer_name] = time_value if time_value else "N/A"
+                            else:
+                                prayer_times[prayer_name] = "N/A"
+                        print(
+                            prayer_times)  # {'Bomdod (Saharlik)': '05:39', 'Quyosh': '06:58', 'Peshin': '12:35', 'Asr': '16:29', 'Shom (Iftorlik)': '18:17', 'Xufton': '19:32'}
 
-                # Determine city name from region code
-                city = REVERSE_LOCATION_MAP.get(region, 'Noma\'lum shahar')
+                        # Determine city name from region code
+                        city = REVERSE_LOCATION_MAP.get(region, 'Noma\'lum shahar')
 
-                # Calculate next prayer and time (using current time for consistency)
-                next_prayer, next_prayer_time = get_next_prayer({'prayer_times': prayer_times}, region,
-                                                                f"{datetime.now().year}-{month:02d}-{day_number:02d}")
+                        # Calculate next prayer and time (using current time for consistency)
+                        date_str = f"{datetime.now().year}-{month:02d}-{int(day_number):02d}"
+                        next_prayer, next_prayer_time = await get_next_prayer({'prayer_times': prayer_times}, region, date_str)
+                        # next_prayer, next_prayer_time = get_next_prayer({'prayer_times': prayer_times}, region,
+                        #                                                 f"{datetime.now().year}-{month:02d}-{day_number:02d}")
 
-                monthly_data[day_number] = {
-                    'location': city,
-                    'date': f"{day_of_week}, {day_number}-{gregorian_month}",
-                    'prayer_times': prayer_times,
-                    'day_type': day_type,
-                    'next_prayer': next_prayer,
-                    'next_prayer_time': next_prayer_time
-                }
-            return monthly_data
-        else:
-            # Single day scraping (kecha, bugun, erta)
-            day_row = soup.find('tr', class_=day_classes[day_type])
-            if not day_row:
-                return None
-            # print(day_row)
-            """
-            <tr class="p_day bugun">
-            <td>3</td>
-            <td>3</td>
-            <td>Душанба</td>
-            <td class="sahar bugun">05:24</td>
-            <td>06:42</td>
-            <td>12:23</td>
-            <td>16:20</td>
-            <td class="iftor bugun">18:07</td>
-            <td>19:22</td>
-            </tr>
-            """
-
-            # Extract cells and date information
-            cells = day_row.find_all('td')
-            if len(cells) < 9:  # Should have day, weekday, and 6 prayer times
-                return None
-            # print(cells)
-            """
-            [<td>3</td>, <td>3</td>, <td>Душанба</td>, <td class="sahar bugun">05:24</td>, <td>06:42</td>, <td>12:23</td>, <td>16:20</td>, <td class="iftor bugun">18:07</td>, <td>19:22</td>]
-            """
-
-            # Extract basic date information
-            day_number = cells[1].text.strip()
-            day_of_week_cyrillic = cells[2].text.strip()
-            day_of_week = UZBEK_WEEKDAYS.get(day_of_week_cyrillic, day_of_week_cyrillic)
-            # print(f"<<<<<<<<day number--{day_number}>>>>>>>>")   # 3
-            # print(f">>>>>>>>day_of_week_cyrillic--{day_of_week_cyrillic}<<<<<<<<")    # Душанба
-            # print(f">>>>>>>>day_of_week--{day_of_week}<<<<<<<<")    # Dushanba
-
-            # Get month name from the page title or fallback to current month
-            gregorian_month_cyrillic = headers[1] if headers else ""
-            gregorian_month = UZBEK_MONTHS.get(gregorian_month_cyrillic, datetime.now().strftime('%B'))
-            # print(f"<<<<<<<<month_elem--{headers}>>>>>>>>")   # ['Рамазон', 'март', 'Ҳафта куни', 'Тонг(Саҳарлик)', 'Қуёш', 'Пешин', 'Аср', 'Шом(Ифтор)', 'Хуфтон']
-            # print(f">>>>>>>>gregorian_month_cyrillic--{gregorian_month_cyrillic}<<<<<<<<")    # март
-            # print(f">>>>>>>>gregorian_month--{gregorian_month}<<<<<<<<")    # Mart
-
-            # Map prayer times
-            prayer_times = {}
-            for i, header in enumerate(headers[3:9], 0):
-                # print(header)
-                prayer_name = PRAYER_MAP.get(header.strip(), f"Lazy {i + 1}")
-                # print(prayer_name)
-                if i + 3 < len(cells):
-                    time_value = cells[i + 3].text.strip()
-                    prayer_times[prayer_name] = time_value if time_value else "N/A"
+                        monthly_data[day_number] = {
+                            'location': city,
+                            'date': f"{day_of_week}, {day_number}-{gregorian_month}",
+                            'prayer_times': prayer_times,
+                            'day_type': day_type,
+                            'next_prayer': next_prayer,
+                            'next_prayer_time': next_prayer_time
+                        }
+                    return monthly_data
                 else:
-                    prayer_times[prayer_name] = "N/A"
-            print(
-                prayer_times)  # {'Bomdod (Saharlik)': '05:24', 'Quyosh': '06:42', 'Peshin': '12:23', 'Asr': '16:20', 'Shom (Iftorlik)': '18:07', 'Xufton': '19:22'}
+                    # Single day scraping (kecha, bugun, erta)
+                    day_row = soup.find('tr', class_=day_classes[day_type])
+                    if not day_row:
+                        return None
+                    # print(day_row)
+                    """
+                    <tr class="p_day bugun">
+                    <td>3</td>
+                    <td>3</td>
+                    <td>Душанба</td>
+                    <td class="sahar bugun">05:24</td>
+                    <td>06:42</td>
+                    <td>12:23</td>
+                    <td>16:20</td>
+                    <td class="iftor bugun">18:07</td>
+                    <td>19:22</td>
+                    </tr>
+                    """
 
-            # Determine city name from region code
-            city = REVERSE_LOCATION_MAP.get(region, 'Noma\'lum shahar')
+                    # Extract cells and date information
+                    cells = day_row.find_all('td')
+                    if len(cells) < 9:  # Should have day, weekday, and 6 prayer times
+                        return None
+                    # print(cells)
+                    """
+                    [<td>3</td>, <td>3</td>, <td>Душанба</td>, <td class="sahar bugun">05:24</td>, <td>06:42</td>, <td>12:23</td>, <td>16:20</td>, <td class="iftor bugun">18:07</td>, <td>19:22</td>]
+                    """
 
-            # Calculate next prayer and time
-            next_prayer, next_prayer_time = get_next_prayer({'prayer_times': prayer_times}, region,
-                                                            f"{datetime.now().year}-{month:02d}-{day_number:02d}")
-            return {
-                'location': city,
-                'date': f"{day_of_week}, {day_number}-{gregorian_month}",
-                'prayer_times': prayer_times,
-                'day_type': day_type,
-                'next_prayer': next_prayer,
-                'next_prayer_time': next_prayer_time
-            }
-    except requests.RequestException as e:
+                    # Extract basic date information
+                    day_number = cells[1].text.strip()
+                    day_of_week_cyrillic = cells[2].text.strip()
+                    day_of_week = UZBEK_WEEKDAYS.get(day_of_week_cyrillic, day_of_week_cyrillic)
+                    # print(f"<<<<<<<<day number--{day_number}>>>>>>>>")   # 3
+                    # print(f">>>>>>>>day_of_week_cyrillic--{day_of_week_cyrillic}<<<<<<<<")    # Душанба
+                    # print(f">>>>>>>>day_of_week--{day_of_week}<<<<<<<<")    # Dushanba
+
+                    # Get month name from the page title or fallback to current month
+                    gregorian_month_cyrillic = headers[1] if headers else ""
+                    gregorian_month = UZBEK_MONTHS.get(gregorian_month_cyrillic, datetime.now().strftime('%B'))
+                    # print(f"<<<<<<<<month_elem--{headers}>>>>>>>>")   # ['Рамазон', 'март', 'Ҳафта куни', 'Тонг(Саҳарлик)', 'Қуёш', 'Пешин', 'Аср', 'Шом(Ифтор)', 'Хуфтон']
+                    # print(f">>>>>>>>gregorian_month_cyrillic--{gregorian_month_cyrillic}<<<<<<<<")    # март
+                    # print(f">>>>>>>>gregorian_month--{gregorian_month}<<<<<<<<")    # Mart
+
+                    # Map prayer times
+                    prayer_times = {}
+                    for i, header in enumerate(headers[3:9], 0):
+                        # print(header)
+                        prayer_name = PRAYER_MAP.get(header.strip(), f"Lazy {i + 1}")
+                        # print(prayer_name)
+                        if i + 3 < len(cells):
+                            time_value = cells[i + 3].text.strip()
+                            prayer_times[prayer_name] = time_value if time_value else "N/A"
+                        else:
+                            prayer_times[prayer_name] = "N/A"
+                    print(
+                        prayer_times)  # {'Bomdod (Saharlik)': '05:24', 'Quyosh': '06:42', 'Peshin': '12:23', 'Asr': '16:20', 'Shom (Iftorlik)': '18:07', 'Xufton': '19:22'}
+
+                    # Determine city name from region code
+                    city = REVERSE_LOCATION_MAP.get(region, 'Noma\'lum shahar')
+
+                    # Calculate next prayer and time
+                    date_str = f"{datetime.now().year}-{month:02d}-{int(day_number):02d}"
+                    next_prayer, next_prayer_time = await get_next_prayer({'prayer_times': prayer_times}, region, date_str)
+                    # next_prayer, next_prayer_time = get_next_prayer({'prayer_times': prayer_times}, region,
+                    #                                                 f"{datetime.now().year}-{month:02d}-{day_number:02d}")
+                    return {
+                        'location': city,
+                        'date': f"{day_of_week}, {day_number}-{gregorian_month}",
+                        'prayer_times': prayer_times,
+                        'day_type': day_type,
+                        'next_prayer': next_prayer,
+                        'next_prayer_time': next_prayer_time
+                    }
+    except aiohttp.ClientError as e:
         print(f"Network error when fetching {url}: {str(e)}")
         return None
     except Exception as e:
@@ -238,7 +247,7 @@ def scrape_prayer_times(region, month=None, day_type='bugun'):
 ## Async wrapper for scraping
 async def scrape_prayer_times_async(region, month=None, day_type='bugun'):
     """Async wrapper for scrape_prayer_times function."""
-    return scrape_prayer_times(region, month, day_type)
+    return scrape_prayer_times_async(region, month, day_type)
 
 
 ## Fetch cached prayer times from database
@@ -353,3 +362,6 @@ async def get_next_prayer(prayer_times, region, date_str):
         logger.info(f"No next prayer found for {region}, {date_str}")
         return "N/A", "N/A"
     return next_prayer, next_prayer_time
+
+
+

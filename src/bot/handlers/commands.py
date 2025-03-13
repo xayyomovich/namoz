@@ -188,7 +188,7 @@ async def send_main_message(message, region=None, day_type='bugun'):
     islamic_date = f"{hijri.day} {ISLAMIC_MONTHS[hijri.month - 1]}, {hijri.year}"
 
     # Check if today is within Ramadan (for 'bugun' only)
-    # iftar_text = f"Keyingi namozgacha - {countdown} qoldi"
+    iftar_text = f"Keyingi namozgacha - {countdown} qoldi"
     if day_type == 'bugun':
         today_datetime = datetime.now()
         ramadan_start, ramadan_end = RAMADAN_DATES
@@ -212,7 +212,7 @@ async def send_main_message(message, region=None, day_type='bugun'):
                         shom_dt += timedelta(days=1)
 
                     # Calculate countdown to iftar (shom) or saharlik (bomdod)
-                    if current_dt < shom_dt and current_dt > bomdod_dt:
+                    if shom_dt > current_dt > bomdod_dt:
                         time_until_iftar = shom_dt - current_dt
                         iftar_hours, remainder = divmod(time_until_iftar.seconds, 3600)
                         iftar_minutes, _ = divmod(remainder, 60)
@@ -287,6 +287,7 @@ async def send_main_message(message, region=None, day_type='bugun'):
             chat_id,
             sent_message.message_id,
             times,
+            islamic_date,
             next_prayer or "N/A",
             next_prayer_time or "N/A"
         )
@@ -339,7 +340,6 @@ def register_commands(dp: Dispatcher):
     dp.message.register(tomorrow_handler, F.text == "Ertaga")
     dp.message.register(ramadan_calendar_handler, F.text == "Ramazon taqvimi")
     dp.message.register(settings_handler, F.text == "Sozlamalar")
-
 
 
 

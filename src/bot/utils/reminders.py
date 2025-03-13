@@ -63,6 +63,24 @@ async def update_main_message(chat_id, message_id, times, next_prayer, next_pray
     await asyncio.create_task(_update_message_task(chat_id))  # Run updates in a background task
 
 
+async def calculate_islamic_date(date_str):
+    """
+    Calculate the Islamic (Hijri) date for a given Gregorian date string.
+    Args:
+        date_str (str): Date in 'YYYY-MM-DD' format (e.g., '2025-03-11').
+    Returns:
+        str: Islamic date in the format 'DD MonthName, YYYY' (e.g., '1 Rajab, 1446').
+    """
+    try:
+        gregorian_date = datetime.strptime(date_str, "%Y-%m-%d")
+        hijri = Gregorian(gregorian_date.year, gregorian_date.month, gregorian_date.day).to_hijri()
+        islamic_date = f"{hijri.day} {ISLAMIC_MONTHS[hijri.month - 1]}, {hijri.year}"
+        return islamic_date
+    except Exception as e:
+        logger.error(f"Error calculating Islamic date for {date_str}: {e}")
+        return "N/A"
+
+
 async def _update_message_task(chat_id):
     """
     Async task to periodically update the main message and handle reminders.
@@ -173,7 +191,7 @@ async def _update_message_task(chat_id):
                     bomdod_dt += timedelta(days=1)
                 if shom_dt < now:
                     shom_dt += timedelta(days=1)
-                if now < shom_dt and now > bomdod_dt:
+                if shom_dt > now > bomdod_dt:
                     time_until_iftar = shom_dt - now
                     hours, remainder = divmod(time_until_iftar.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
@@ -265,7 +283,7 @@ async def send_new_main_message(chat_id, times, current_time, islamic_date, next
                 bomdod_dt += timedelta(days=1)
             if shom_dt < now:
                 shom_dt += timedelta(days=1)
-            if now < shom_dt and now > bomdod_dt:
+            if shom_dt > now > bomdod_dt:
                 time_until_iftar = shom_dt - now
                 hours, remainder = divmod(time_until_iftar.seconds, 3600)
                 minutes, _ = divmod(remainder, 60)
@@ -322,7 +340,7 @@ def run_scheduler():
     - Schedules cleanup_old_messages() to run hourly.
     - Runs in a loop, checking every 60 seconds.
     """
-    schedule.every(1).month.do(lambda: asyncio.run(cache_monthly_prayer_times())).tag('monthly_cache')
+    schedule.every(1).week.do(lambda: asyncio.run(cache_monthly_prayer_times())).tag('monthly_cache')
     schedule.every().hour.do(lambda: asyncio.run(cleanup_old_messages()))
 
     while True:

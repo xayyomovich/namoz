@@ -5,16 +5,11 @@ from src.config.settings import LOCATION_MAP
 
 
 def get_main_keyboard():
-    """Build main reply keyboard with 2x1x1 layout, Sozlamalar as inline button."""
+    """Build main reply keyboard with 2x2 layout."""
     builder = ReplyKeyboardBuilder()
     builder.row(types.KeyboardButton(text="Bugun"), types.KeyboardButton(text="Ertaga"))
-    builder.row(types.KeyboardButton(text="Ramazon taqvimi"))
-
-    # Add Sozlamalar as an inline keyboard button
-    inline_builder = InlineKeyboardBuilder()
-    inline_builder.add(InlineKeyboardButton(text="Sozlamalar", callback_data="settings"))
+    builder.row(types.KeyboardButton(text="Ramazon taqvimi"), types.KeyboardButton(text="Sozlamalar"))
     markup = builder.as_markup(resize_keyboard=True)
-    markup.inline_keyboard = inline_builder.as_markup().inline_keyboard  # Combine reply and inline keyboards
     return markup
 
 
