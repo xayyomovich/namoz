@@ -340,8 +340,3 @@ def register_commands(dp: Dispatcher):
     dp.message.register(tomorrow_handler, F.text == "Ertaga")
     dp.message.register(ramadan_calendar_handler, F.text == "Ramazon taqvimi")
     dp.message.register(settings_handler, F.text == "Sozlamalar")
-
-
-
-
-

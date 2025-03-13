@@ -100,7 +100,7 @@ async def scrape_prayer_times(region, month=None, day_type='bugun'):
                 if day_type == 'month':
                     # Scrape all days in the month
                     all_rows = soup.find_all('tr', class_=lambda c: c and 'p_day' in c)
-                    print(all_rows)
+                    # print(all_rows)
                     if not all_rows:
                         return None
                     monthly_data = {}
@@ -139,8 +139,7 @@ async def scrape_prayer_times(region, month=None, day_type='bugun'):
                                 prayer_times[prayer_name] = time_value if time_value else "N/A"
                             else:
                                 prayer_times[prayer_name] = "N/A"
-                        print(
-                            prayer_times)  # {'Bomdod (Saharlik)': '05:39', 'Quyosh': '06:58', 'Peshin': '12:35', 'Asr': '16:29', 'Shom (Iftorlik)': '18:17', 'Xufton': '19:32'}
+                        # print(prayer_times)  # {'Bomdod (Saharlik)': '05:39', 'Quyosh': '06:58', 'Peshin': '12:35', 'Asr': '16:29', 'Shom (Iftorlik)': '18:17', 'Xufton': '19:32'}
 
                         # Determine city name from region code
                         city = REVERSE_LOCATION_MAP.get(region, 'Noma\'lum shahar')
@@ -215,8 +214,7 @@ async def scrape_prayer_times(region, month=None, day_type='bugun'):
                             prayer_times[prayer_name] = time_value if time_value else "N/A"
                         else:
                             prayer_times[prayer_name] = "N/A"
-                    print(
-                        prayer_times)  # {'Bomdod (Saharlik)': '05:24', 'Quyosh': '06:42', 'Peshin': '12:23', 'Asr': '16:20', 'Shom (Iftorlik)': '18:07', 'Xufton': '19:22'}
+                    # print(prayer_times)  # {'Bomdod (Saharlik)': '05:24', 'Quyosh': '06:42', 'Peshin': '12:23', 'Asr': '16:20', 'Shom (Iftorlik)': '18:07', 'Xufton': '19:22'}
 
                     # Determine city name from region code
                     city = REVERSE_LOCATION_MAP.get(region, 'Noma\'lum shahar')
@@ -247,7 +245,7 @@ async def scrape_prayer_times(region, month=None, day_type='bugun'):
 ## Async wrapper for scraping
 async def scrape_prayer_times_async(region, month=None, day_type='bugun'):
     """Async wrapper for scrape_prayer_times function."""
-    return scrape_prayer_times_async(region, month, day_type)
+    return await scrape_prayer_times(region, month, day_type)
 
 
 ## Fetch cached prayer times from database
@@ -291,8 +289,12 @@ async def save_monthly_prayer_times(region, month, year, data):
     """
     try:
         async with aiosqlite.connect(DATABASE_PATH, timeout=10) as db:  ## Added timeout for safety
+            # Check if data is a coroutine and await it if necessary
+            if hasattr(data, '__await__'):
+                data = await data
+
             for day, day_data in data.items():
-                date_str = f"{year}-{month:02d}-{day:02d}"
+                date_str = f"{year}-{month:02d}-{int(day):02d}"
                 times_json = json.dumps(day_data)  ## Serialize the full day data
                 await db.execute(
                     '''INSERT OR REPLACE INTO prayer_times 
@@ -307,7 +309,7 @@ async def save_monthly_prayer_times(region, month, year, data):
 
 ## New function to cache monthly prayer times
 async def cache_monthly_prayer_times():
-    """Cache prayer times for all regions for the entire current month from islom.uz."""
+    """Cache prayer times for all regions for the entire current month"""
     now = datetime.now()
     year = now.year
     month = now.month
