@@ -17,21 +17,21 @@ async def location_callback(callback_query: types.CallbackQuery):
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute('UPDATE users SET region = ? WHERE chat_id = ?', (region, chat_id))
         await db.commit()
-    await callback_query.message.edit_text(f"Joylashuvingiz {city} ga o'rnatildi!", reply_markup=get_main_keyboard())
+    await callback_query.message.answer(f"Joylashuvingiz {city} ga o'rnatildi!", reply_markup=get_main_keyboard())
     await send_main_message(callback_query.message, region)
     await callback_query.answer()
 
 
 async def settings_callback(callback_query: types.CallbackQuery):
     """Handle settings submenu."""
-    await callback_query.message.edit_text("Sozlamalar:", reply_markup=get_settings_keyboard())
+    await callback_query.message.edit_text("Sozlamalar", reply_markup=get_settings_keyboard())
     await callback_query.answer()
 
 
 async def reminders_callback(callback_query: types.CallbackQuery):
     """Handle reminders toggle with inline buttons."""
     chat_id = callback_query.message.chat.id
-    prayers = ['Bomdod (Saharlik)', 'Quyosh', 'Peshin', 'Asr', 'Shom (Iftorlik)',
+    prayers = ['Bomdod', 'Quyosh', 'Peshin', 'Asr', 'Shom',
                'Xufton']  # Match prayer names with reminders.py
     builder = InlineKeyboardBuilder()
     for i in range(0, len(prayers), 3):
@@ -41,7 +41,7 @@ async def reminders_callback(callback_query: types.CallbackQuery):
         ) for prayer in prayers[i:i + 3]]
         builder.row(*row)
     builder.row(InlineKeyboardButton(text="Orqaga", callback_data="back"))
-    await callback_query.message.edit_text("Eslatishlar:", reply_markup=builder.as_markup())
+    await callback_query.message.edit_text("Oldindan eslatish", reply_markup=builder.as_markup())
     await callback_query.answer()
 
 
@@ -55,13 +55,13 @@ async def toggle_prayer_callback(callback_query: types.CallbackQuery):
 
 async def change_location_callback(callback_query: types.CallbackQuery):
     """Handle location change from settings submenu."""
-    await callback_query.message.edit_text("Iltimos, yangi shahringizni tanlang:", reply_markup=get_location_keyboard())
+    await callback_query.message.edit_text("Iltimos, yangi shahringizni tanlang", reply_markup=get_location_keyboard())
     await callback_query.answer()
 
 
 async def back_callback(callback_query: types.CallbackQuery):
     """Return to main keyboard."""
-    await callback_query.message.edit_text("Asosiy menyuga qaytdingiz:", reply_markup=get_main_keyboard())
+    await callback_query.message.edit_text("Asosiy menyuga qaytdingiz", reply_markup=get_main_keyboard())
     await callback_query.answer()
 
 

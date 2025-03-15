@@ -17,8 +17,8 @@ def get_settings_keyboard():
     """Build settings submenu with inline buttons."""
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="Eslatish", callback_data="reminders"),
-        InlineKeyboardButton(text="Joylashuv", callback_data="change_location"),
+        InlineKeyboardButton(text="Oldindan eslatish", callback_data="reminders"),
+        InlineKeyboardButton(text="Joylashuvni o'zgartirish", callback_data="change_location"),
         InlineKeyboardButton(text="Orqaga", callback_data="back")
     )
     return builder.as_markup()

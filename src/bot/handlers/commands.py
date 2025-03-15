@@ -4,6 +4,7 @@ from aiogram import Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+
 from src.bot.states.location import LocationState
 from src.bot.keyboards.navigation import get_main_keyboard, get_settings_keyboard, get_location_keyboard
 from src.bot.utils.reminders import run_scheduler, update_main_message, log_message
@@ -47,8 +48,6 @@ async def start_command(message: types.Message, state: FSMContext):
     if not region or not region[0]:
         await message.answer(welcome_text)
         await prompt_for_location(message, state)
-        # privacy_text = "Biz sizning chat ID va username'ingizni xizmat ko'rsatish uchun saqlaymiz."
-        # await message.answer(privacy_text)
     else:
         # If region is already set, send main message with prayer times
         await message.answer("Assalomu alaykum! Sizning namoz vaqtlaringiz:", reply_markup=get_main_keyboard())
@@ -188,7 +187,7 @@ async def send_main_message(message, region=None, day_type='bugun'):
     islamic_date = f"{hijri.day} {ISLAMIC_MONTHS[hijri.month - 1]}, {hijri.year}"
 
     # Check if today is within Ramadan (for 'bugun' only)
-    iftar_text = f"Keyingi namozgacha - {countdown} qoldi"
+    # iftar_text = f"Keyingi namozgacha - {countdown} qoldi"
     if day_type == 'bugun':
         today_datetime = datetime.now()
         ramadan_start, ramadan_end = RAMADAN_DATES
@@ -212,7 +211,7 @@ async def send_main_message(message, region=None, day_type='bugun'):
                         shom_dt += timedelta(days=1)
 
                     # Calculate countdown to iftar (shom) or saharlik (bomdod)
-                    if shom_dt > current_dt > bomdod_dt:
+                    if current_dt < shom_dt and current_dt > bomdod_dt:
                         time_until_iftar = shom_dt - current_dt
                         iftar_hours, remainder = divmod(time_until_iftar.seconds, 3600)
                         iftar_minutes, _ = divmod(remainder, 60)
@@ -305,6 +304,12 @@ async def tomorrow_handler(message: types.Message):
     await send_main_message(message, day_type='erta')
 
 
+async def settings_handler(message: types.Message):
+    """Handle 'Sozlamalar' button press."""
+    await message.answer("Sozlamalar ⚙️", reply_markup=get_settings_keyboard())
+    # await settings_callback(message, reply_markup=get_settings_keyboard())
+
+
 async def ramadan_calendar_handler(message: types.Message):
     """Handle 'Ramazon taqvimi' button press and display a Ramadan image from static files."""
     try:
@@ -322,11 +327,6 @@ async def ramadan_calendar_handler(message: types.Message):
     except Exception as e:
         logger.error(f"Error displaying Ramadan image: {e}")
         await message.answer("Xatolik yuz berdi, rasmni ko'rsatishda muammo bor.")
-
-
-async def settings_handler(message: types.Message):
-    """Handle 'Sozlamalar' button press."""
-    await message.answer("Sozlamalar:", reply_markup=get_settings_keyboard())
 
 
 def register_commands(dp: Dispatcher):

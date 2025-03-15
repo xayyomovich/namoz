@@ -162,7 +162,7 @@ async def _update_message_task(chat_id):
             time_until = next_time - now
             hours, remainder = divmod(time_until.seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
-            countdown = f"{hours}:{minutes:02d}"
+            countdown = f"{hours}:{int(minutes):02d}"
 
             # Trigger reminder 5 minutes before the prayer
             if minutes == 5 and seconds == 0 and chat_id not in reminders.get(next_prayer, {}):
@@ -195,12 +195,12 @@ async def _update_message_task(chat_id):
                     time_until_iftar = shom_dt - now
                     hours, remainder = divmod(time_until_iftar.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    iftar_text = f"Iftorlikgacha - {hours}:{minutes:02d} qoldi"
+                    iftar_text = f"Iftorlikgacha - {hours}:{int(minutes):02d} qoldi"
                 else:
                     time_until_sahar = bomdod_dt - now
                     hours, remainder = divmod(time_until_sahar.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    iftar_text = f"Saharlikgacha - {hours}:{minutes:02d} qoldi"
+                    iftar_text = f"Saharlikgacha - {hours}:{int(minutes):02d} qoldi"
 
         # Find the closest prayer time for highlighting
         closest_prayer = None
@@ -287,12 +287,12 @@ async def send_new_main_message(chat_id, times, current_time, islamic_date, next
                 time_until_iftar = shom_dt - now
                 hours, remainder = divmod(time_until_iftar.seconds, 3600)
                 minutes, _ = divmod(remainder, 60)
-                iftar_text = f"Iftorlikgacha - {hours}:{minutes:02d} qoldi"
+                iftar_text = f"Iftorlikgacha - {hours}:{int(minutes):02d} qoldi"
             else:
                 time_until_sahar = bomdod_dt - now
                 hours, remainder = divmod(time_until_sahar.seconds, 3600)
                 minutes, _ = divmod(remainder, 60)
-                iftar_text = f"Saharlikgacha - {hours}:{minutes:02d} qoldi"
+                iftar_text = f"Saharlikgacha - {hours}:{int(minutes):02d} qoldi"
 
     # Find the closest prayer for highlighting
     closest_prayer = None
@@ -340,7 +340,7 @@ def run_scheduler():
     - Schedules cleanup_old_messages() to run hourly.
     - Runs in a loop, checking every 60 seconds.
     """
-    schedule.every(1).week.do(lambda: asyncio.run(cache_monthly_prayer_times())).tag('monthly_cache')
+    schedule.every(4).week.do(lambda: asyncio.run(cache_monthly_prayer_times())).tag('monthly_cache')
     schedule.every().hour.do(lambda: asyncio.run(cleanup_old_messages()))
 
     while True:
