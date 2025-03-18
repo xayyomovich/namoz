@@ -22,12 +22,6 @@ import os
 logger = logging.getLogger(__name__)
 
 
-async def prompt_for_location(message: types.Message, state: FSMContext):
-    """Prompt user to select their location and set FSM state."""
-    await message.answer("Iltimos, shahringizni tanlang:", reply_markup=get_location_keyboard())
-    await state.set_state(LocationState.waiting_for_location)
-
-
 async def start_command(message: types.Message, state: FSMContext):
     """Handle /start command."""
     chat_id = message.chat.id
@@ -42,15 +36,17 @@ async def start_command(message: types.Message, state: FSMContext):
         region = await cursor.fetchone()
 
     # Send welcome message
-    welcome_text = "Assalomu alaykum! Namoz vaqtlari botiga xush kelibsiz."
+    welcome_text = ("Assalomu alaykum! Namoz vaqtlari botiga xush kelibsiz🎉\n"
+                    "Bot orqali siz namoz vaqtlaridan boxabar bo'lib turishingiz mumkin 🔔")
 
     # If user hasn't set a location yet, show location keyboard
     if not region or not region[0]:
+        # No location set, prompt with inline keyboard
         await message.answer(welcome_text)
-        await prompt_for_location(message, state)
+        await message.answer("Iltimos, shahringizni tanlang", reply_markup=get_location_keyboard())
     else:
-        # If region is already set, send main message with prayer times
-        await message.answer("Assalomu alaykum! Sizning namoz vaqtlaringiz:", reply_markup=get_main_keyboard())
+        # Location set, show main menu with prayer times
+        await message.answer(welcome_text, reply_markup=get_main_keyboard())
         await send_main_message(message, region[0])
 
 
@@ -73,38 +69,17 @@ async def save_user(chat_id, username):
         await db.commit()
 
 
-async def set_location_command(message: types.Message, state: FSMContext):
-    """Handle /set_location to ask for user location."""
-    await prompt_for_location(message, state)
-
-
-async def handle_location(message: types.Message, state: FSMContext):
-    """Handle location input via text."""
-    user_input = message.text
-    region = LOCATION_MAP.get(user_input)
-
-    if not region:
-        await message.answer("Noma'lum shahar! Himm")
-        await prompt_for_location(message, state)
-        return
-
-    # Save user's region
-    chat_id = message.chat.id
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute('UPDATE users SET region = ? WHERE chat_id = ?', (region, chat_id))
-        await db.commit()
-
-    await message.answer(f"Joylashuv {user_input} ga o'rnatildi!", reply_markup=get_main_keyboard())
-    await state.clear()
-    await send_main_message(message, region)
+async def set_location_command(message: types.Message):
+    """Handle /set_location to ask for user location via inline keyboard."""
+    await message.answer("Iltimos, shahringizni tanlang", reply_markup=get_location_keyboard())
 
 
 PRAYER_EMOJIS = {
-    'Bomdod (Saharlik)': '🌅',
+    'Bomdod': '🌅',
     'Quyosh': '☀️',
     'Peshin': '🌞',
     'Asr': '🌆',
-    'Shom (Iftorlik)': '🌙',
+    'Shom': '🌙',
     'Xufton': '⭐'
 }
 
@@ -120,7 +95,7 @@ async def send_main_message(message, region=None, day_type='bugun'):
             user_data = await cursor.fetchone()
             if not user_data or not user_data[0]:
                 # Prompt user for location if no region is found
-                await prompt_for_location(message, message.get_current_state())
+                await set_location_command(message)
                 return
             region = user_data[0]
 
@@ -187,43 +162,39 @@ async def send_main_message(message, region=None, day_type='bugun'):
     islamic_date = f"{hijri.day} {ISLAMIC_MONTHS[hijri.month - 1]}, {hijri.year}"
 
     # Check if today is within Ramadan (for 'bugun' only)
-    # iftar_text = f"Keyingi namozgacha - {countdown} qoldi"
+    iftar_text = None
     if day_type == 'bugun':
         today_datetime = datetime.now()
         ramadan_start, ramadan_end = RAMADAN_DATES
         in_ramadan = ramadan_start <= today_datetime <= ramadan_end
         if in_ramadan:
             # Get Ramadan-specific prayer times
-            bomdod_time = times['prayer_times'].get('Bomdod (Saharlik)', 'N/A')
-            shom_time = times['prayer_times'].get('Shom (Iftorlik)', 'N/A')
+            bomdod_time = times['prayer_times'].get('Bomdod', 'N/A')
+            shom_time = times['prayer_times'].get('Shom', 'N/A')
             if bomdod_time != 'N/A' and shom_time != 'N/A':
-                try:
-                    # Convert string times to datetime objects for Ramadan countdown
-                    bomdod_dt = datetime.strptime(bomdod_time, "%H:%M")
-                    bomdod_dt = datetime.now().replace(hour=bomdod_dt.hour, minute=bomdod_dt.minute, second=0,
-                                                       microsecond=0)
-                    shom_dt = datetime.strptime(shom_time, "%H:%M")
-                    shom_dt = datetime.now().replace(hour=shom_dt.hour, minute=shom_dt.minute, second=0, microsecond=0)
-                    current_dt = datetime.now()
-                    if bomdod_dt < current_dt:
-                        bomdod_dt += timedelta(days=1)
-                    if shom_dt < current_dt:
-                        shom_dt += timedelta(days=1)
-
-                    # Calculate countdown to iftar (shom) or saharlik (bomdod)
-                    if current_dt < shom_dt and current_dt > bomdod_dt:
-                        time_until_iftar = shom_dt - current_dt
-                        iftar_hours, remainder = divmod(time_until_iftar.seconds, 3600)
-                        iftar_minutes, _ = divmod(remainder, 60)
-                        iftar_text = f"Iftorlikgacha - {iftar_hours}:{iftar_minutes:02d} qoldi"
-                    else:
-                        time_until_sahar = bomdod_dt - current_dt
-                        sahar_hours, remainder = divmod(time_until_sahar.seconds, 3600)
-                        sahar_minutes, _ = divmod(remainder, 60)
-                        iftar_text = f"Saharlikgacha - {sahar_hours}:{sahar_minutes:02d} qoldi"
-                except Exception as e:
-                    logger.error(f"Error calculating Ramadan countdown: {str(e)}")
-                    iftar_text = "Vaqtni hisoblashda xatolik"
+                # Convert string times to datetime objects for Ramadan countdown
+                bomdod_dt = datetime.strptime(bomdod_time, "%H:%M")
+                bomdod_dt = datetime.now().replace(hour=bomdod_dt.hour, minute=bomdod_dt.minute, second=0,
+                                                   microsecond=0)
+                shom_dt = datetime.strptime(shom_time, "%H:%M")
+                shom_dt = datetime.now().replace(hour=shom_dt.hour, minute=shom_dt.minute, second=0, microsecond=0)
+                now = datetime.now()
+                if now < shom_dt:
+                    time_until_iftar = shom_dt - now
+                    hours, remainder = divmod(time_until_iftar.seconds, 3600)
+                    minutes, _ = divmod(remainder, 60)
+                    iftar_text = f"Iftorlikgacha - {hours}:{minutes:02d} qoldi"
+                else:
+                    # After Shom, countdown to next day's Saharlik
+                    next_bomdod_dt = bomdod_dt + timedelta(days=1)
+                    time_until_sahar = next_bomdod_dt - now
+                    hours, remainder = divmod(time_until_sahar.seconds, 3600)
+                    minutes, _ = divmod(remainder, 60)
+                    iftar_text = f"Saharlikgacha - {hours}:{minutes:02d} qoldi"
+            else:
+                iftar_text = "Saharlik yoki Iftorlik vaqti mavjud emas"
+        else:
+            iftar_text = f"Keyingi namozgacha - {countdown} qoldi"
 
     # Start building the message with location, date, and Islamic date
     message_text = (
@@ -256,9 +227,8 @@ async def send_main_message(message, region=None, day_type='bugun'):
         # Build prayer list with emojis, bolding exact time, and adding tick
         for prayer, time_str in times['prayer_times'].items():
             emoji = PRAYER_EMOJIS.get(prayer, '⏰')
-            highlight = "**" if prayer == closest_prayer else ""
             tick = " ✅" if prayer == closest_prayer else ""
-            message_text += f"{emoji} {prayer}: {highlight}{time_str}{highlight}{tick}\n"
+            message_text += f"{emoji} {prayer}: {time_str}{tick}\n"
     else:  # 'erta'
         # Build simple prayer list with emojis for tomorrow
         for prayer, time_str in times['prayer_times'].items():
@@ -286,9 +256,10 @@ async def send_main_message(message, region=None, day_type='bugun'):
             chat_id,
             sent_message.message_id,
             times,
-            islamic_date,
             next_prayer or "N/A",
-            next_prayer_time or "N/A"
+            next_prayer_time or "N/A",
+            islamic_date
+
         )
     )
     return sent_message
@@ -331,9 +302,8 @@ async def ramadan_calendar_handler(message: types.Message):
 
 def register_commands(dp: Dispatcher):
     """Register command handlers with the Dispatcher."""
-    dp.message.register(start_command, Command("start"))
-    dp.message.register(set_location_command, Command("set_location"))
-    dp.message.register(handle_location, LocationState.waiting_for_location, F.text)
+    dp.message.register(start_command, F.text == "/start")
+    dp.message.register(set_location_command, F.text == "/set_location")
 
     # Register button handlers
     dp.message.register(today_handler, F.text == "Bugun")

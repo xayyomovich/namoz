@@ -44,11 +44,11 @@ ISLAMIC_MONTHS = [
 ]
 
 PRAYER_MAP = {
-    'Тонг(Саҳарлик)': 'Bomdod (Saharlik)',
+    'Тонг(Саҳарлик)': 'Bomdod',
     'Қуёш': 'Quyosh',
     'Пешин': 'Peshin',
     'Аср': 'Asr',
-    'Шом(Ифтор)': 'Shom (Iftorlik)',
+    'Шом(Ифтор)': 'Shom',
     'Хуфтон': 'Xufton'
 }
 
@@ -222,8 +222,7 @@ async def scrape_prayer_times(region, month=None, day_type='bugun'):
                     # Calculate next prayer and time
                     date_str = f"{datetime.now().year}-{month:02d}-{int(day_number):02d}"
                     next_prayer, next_prayer_time = await get_next_prayer({'prayer_times': prayer_times}, region, date_str)
-                    # next_prayer, next_prayer_time = get_next_prayer({'prayer_times': prayer_times}, region,
-                    #                                                 f"{datetime.now().year}-{month:02d}-{day_number:02d}")
+
                     return {
                         'location': city,
                         'date': f"{day_of_week}, {day_number}-{gregorian_month}",

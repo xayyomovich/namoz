@@ -6,8 +6,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from src.config.settings import BOT_TOKEN, DATABASE_PATH
 from src.bot.handlers.commands import register_commands
-from src.bot.handlers.callbacks import register_callbacks
-from src.bot.states.location import register_states
+from src.bot.handlers.callbacks import register_callbacks, register_message_handlers
 from src.bot.utils.reminders import run_scheduler
 import aiosqlite
 import threading
@@ -115,7 +114,7 @@ async def main():
     # Register all handlers
     register_commands(dp)  # Registers command handlers (e.g., /start, /bugun).
     register_callbacks(dp)  # Registers callback query handlers.
-    register_states(dp)  # Registers FSM states for location selection.
+    register_message_handlers(dp)
 
     # Register startup handler
     dp.startup.register(on_startup)  # Runs on_startup when the bot starts.

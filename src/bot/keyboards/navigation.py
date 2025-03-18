@@ -14,14 +14,11 @@ def get_main_keyboard():
 
 
 def get_settings_keyboard():
-    """Build settings submenu with inline buttons."""
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="Oldindan eslatish", callback_data="reminders"),
-        InlineKeyboardButton(text="Joylashuvni o'zgartirish", callback_data="change_location"),
-        InlineKeyboardButton(text="Orqaga", callback_data="back")
-    )
-    return builder.as_markup()
+    """Build settings submenu with reply buttons."""
+    builder = ReplyKeyboardBuilder()
+    builder.row(types.KeyboardButton(text="Oldindan eslatish"), types.KeyboardButton(text="Joylashuvni o'zgartirish"))
+    builder.row(types.KeyboardButton(text="Orqaga"))
+    return builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
 
 
 def get_location_keyboard():
