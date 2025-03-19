@@ -12,6 +12,8 @@ import aiosqlite
 import threading
 import logging
 from src.scraping.prayer_times import cache_monthly_prayer_times  # Import the function from prayer_times.py
+from src.bot.utils.reminders import run_scheduler
+
 
 # Configure logging
 # - Sets up logging to both a file (bot.log) and the console with a detailed format.
@@ -101,7 +103,8 @@ async def on_startup(bot):
 
     # Start scheduler in a separate thread
     # - Daemon=True ensures the thread stops when the main program exits.
-    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    loop = asyncio.get_event_loop()  # Get the current event loop
+    scheduler_thread = threading.Thread(target=run_scheduler, args=(loop,), daemon=True)
     scheduler_thread.start()
     logger.info('Scheduler thread started successfully!')
 
@@ -115,6 +118,8 @@ async def main():
     register_commands(dp)  # Registers command handlers (e.g., /start, /bugun).
     register_callbacks(dp)  # Registers callback query handlers.
     register_message_handlers(dp)
+    loop = asyncio.get_event_loop()
+    run_scheduler(loop)
 
     # Register startup handler
     dp.startup.register(on_startup)  # Runs on_startup when the bot starts.

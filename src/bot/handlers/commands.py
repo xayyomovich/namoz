@@ -1,20 +1,16 @@
 import asyncio
 
 from aiogram import Dispatcher, types, F
-from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 
-from src.bot.states.location import LocationState
 from src.bot.keyboards.navigation import get_main_keyboard, get_settings_keyboard, get_location_keyboard
-from src.bot.utils.reminders import run_scheduler, update_main_message, log_message
-from src.scraping.prayer_times import scrape_prayer_times, fetch_cached_prayer_times, ISLAMIC_MONTHS
-from src.config.settings import LOCATION_MAP, RAMADAN_DATES, DATABASE_PATH
+from src.bot.utils.calculations import get_ramadan_countdown
+from src.bot.utils.reminders import update_main_message, log_message, calculate_islamic_date
+from src.scraping.prayer_times import fetch_cached_prayer_times
+from src.config.settings import DATABASE_PATH
 from datetime import datetime, timedelta
-from hijri_converter import Gregorian
 import aiosqlite
 import logging
-import json
 from aiogram.types import FSInputFile
 from src.config.ramadan_images import RAMADAN_IMAGES
 import os
@@ -86,6 +82,7 @@ PRAYER_EMOJIS = {
 
 async def send_main_message(message, region=None, day_type='bugun'):
     """Send or update the main message with prayer times."""
+    global closest_prayer
     chat_id = message.chat.id
 
     # Check if region is provided; if not, fetch it from the database
@@ -157,44 +154,13 @@ async def send_main_message(message, region=None, day_type='bugun'):
             logger.error(f"Error calculating countdown: {str(e)}")
 
     # Calculate Islamic (Hijri) date from the Gregorian date
-    gregorian_date = datetime.strptime(date_str, "%Y-%m-%d")
-    hijri = Gregorian(gregorian_date.year, gregorian_date.month, gregorian_date.day).to_hijri()
-    islamic_date = f"{hijri.day} {ISLAMIC_MONTHS[hijri.month - 1]}, {hijri.year}"
+    islamic_date = await calculate_islamic_date(date_str)
 
-    # Check if today is within Ramadan (for 'bugun' only)
+    # Use the new function for Ramadan countdown
     iftar_text = None
     if day_type == 'bugun':
-        today_datetime = datetime.now()
-        ramadan_start, ramadan_end = RAMADAN_DATES
-        in_ramadan = ramadan_start <= today_datetime <= ramadan_end
-        if in_ramadan:
-            # Get Ramadan-specific prayer times
-            bomdod_time = times['prayer_times'].get('Bomdod', 'N/A')
-            shom_time = times['prayer_times'].get('Shom', 'N/A')
-            if bomdod_time != 'N/A' and shom_time != 'N/A':
-                # Convert string times to datetime objects for Ramadan countdown
-                bomdod_dt = datetime.strptime(bomdod_time, "%H:%M")
-                bomdod_dt = datetime.now().replace(hour=bomdod_dt.hour, minute=bomdod_dt.minute, second=0,
-                                                   microsecond=0)
-                shom_dt = datetime.strptime(shom_time, "%H:%M")
-                shom_dt = datetime.now().replace(hour=shom_dt.hour, minute=shom_dt.minute, second=0, microsecond=0)
-                now = datetime.now()
-                if now < shom_dt:
-                    time_until_iftar = shom_dt - now
-                    hours, remainder = divmod(time_until_iftar.seconds, 3600)
-                    minutes, _ = divmod(remainder, 60)
-                    iftar_text = f"Iftorlikgacha - {hours}:{minutes:02d} qoldi"
-                else:
-                    # After Shom, countdown to next day's Saharlik
-                    next_bomdod_dt = bomdod_dt + timedelta(days=1)
-                    time_until_sahar = next_bomdod_dt - now
-                    hours, remainder = divmod(time_until_sahar.seconds, 3600)
-                    minutes, _ = divmod(remainder, 60)
-                    iftar_text = f"Saharlikgacha - {hours}:{minutes:02d} qoldi"
-            else:
-                iftar_text = "Saharlik yoki Iftorlik vaqti mavjud emas"
-        else:
-            iftar_text = f"Keyingi namozgacha - {countdown} qoldi"
+        now = datetime.now()
+        iftar_text = get_ramadan_countdown(now, times, countdown)
 
     # Start building the message with location, date, and Islamic date
     message_text = (
@@ -243,6 +209,33 @@ async def send_main_message(message, region=None, day_type='bugun'):
             f"{next_prayer} gacha\n"
             f"- {countdown} ⏰qoldi"
         )
+    elif day_type == 'bugun' and closest_prayer == "Xufton" and (not next_prayer or next_prayer_time == 'N/A'):
+        # All prayers for today have passed (Xufton is the closest and no next prayer)
+        tomorrow_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        tomorrow_times = await fetch_cached_prayer_times(region, tomorrow_date)
+        if tomorrow_times:
+            # Get Bomdod time for tomorrow
+            bomdod_time = tomorrow_times['prayer_times'].get('Bomdod', 'N/A')
+            if bomdod_time != 'N/A':
+                try:
+                    next_time = datetime.strptime(bomdod_time, "%H:%M")
+                    next_time = datetime.now().replace(
+                        hour=next_time.hour,
+                        minute=next_time.minute,
+                        second=0,
+                        microsecond=0
+                    ) + timedelta(days=1)  # Set to tomorrow
+                    time_until = next_time - datetime.now()
+                    hours, remainder = divmod(time_until.seconds, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    countdown = f"{hours}:{minutes:02d}"
+                    message_text += (
+                        f"Bomdod gacha\n"
+                        f"- {countdown} ⏰qoldi"
+                    )
+                except Exception as e:
+                    logger.error(f"Error calculating countdown to tomorrow's Bomdod: {str(e)}")
+
 
     # Send the formatted message with Markdown parsing for bold
     sent_message = await message.answer(message_text, parse_mode='Markdown')
@@ -310,3 +303,9 @@ def register_commands(dp: Dispatcher):
     dp.message.register(tomorrow_handler, F.text == "Ertaga")
     dp.message.register(ramadan_calendar_handler, F.text == "Ramazon taqvimi")
     dp.message.register(settings_handler, F.text == "Sozlamalar")
+
+
+
+
+
+

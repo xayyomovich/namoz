@@ -22,12 +22,12 @@ async def delete_previous_message(bot, chat_id, message_id=None):
             pass
 
 
-async def ramadan_taqvim_command(message: types.Message):
-    chat_id = message.chat.id
-    # Assume this generates the Ramadan calendar
-    ramadan_text = "Ramazon taqvimi: ... (your logic here) ..."
-    new_message = await message.answer(ramadan_text, reply_markup=get_main_keyboard())
-    user_state[chat_id] = {'level': 'ramadan', 'last_message_id': new_message.message_id}
+# async def ramadan_taqvim_command(message: types.Message):
+#     chat_id = message.chat.id
+#     # Assume this generates the Ramadan calendar
+#     ramadan_text = "Ramazon taqvimi: ... (your logic here) ..."
+#     new_message = await message.answer(ramadan_text, reply_markup=get_main_keyboard())
+#     user_state[chat_id] = {'level': 'ramadan', 'last_message_id': new_message.message_id}
 
 
 async def location_callback(callback_query: types.CallbackQuery):
@@ -57,21 +57,19 @@ async def settings_callback(callback_query: types.CallbackQuery):
 
 
 async def reminders_callback(update: types.CallbackQuery | types.Message):
-    """Handle reminders toggle with inline buttons."""
     if isinstance(update, types.CallbackQuery):
         chat_id = update.message.chat.id
         bot = update.bot
         message = update.message
-    else:  # types.Message
+    else:
         chat_id = update.chat.id
         bot = update.bot
         message = update
-
     prayers = ['Bomdod', 'Quyosh', 'Peshin', 'Asr', 'Shom', 'Xufton']
     builder = InlineKeyboardBuilder()
     for i in range(0, len(prayers), 3):
         row = [InlineKeyboardButton(
-            text=f"{prayer} {'🔔' if reminders.get(chat_id, {}).get(prayer, False) else '🔕'}",
+            text=f"{prayer} {'🔔' if chat_id not in reminders.get(prayer, {}) else '🔕'}",
             callback_data=f"toggle_{prayer}"
         ) for prayer in prayers[i:i + 3]]
         builder.row(*row)
@@ -88,10 +86,18 @@ async def reminders_callback(update: types.CallbackQuery | types.Message):
 
 
 async def toggle_prayer_callback(callback_query: types.CallbackQuery):
-    """Toggle reminder for a specific prayer."""
     chat_id = callback_query.message.chat.id
     prayer = callback_query.data.split('_')[1]
-    reminders.setdefault(chat_id, {})[prayer] = not reminders.get(chat_id, {}).get(prayer, False)
+    # If the reminder is currently ON (chat_id not in reminders[prayer]), turn it OFF by adding chat_id
+    # If the reminder is currently OFF (chat_id in reminders[prayer]), turn it ON by removing chat_id
+    if chat_id in reminders.get(prayer, {}):
+        # Turn ON: Remove chat_id from reminders[prayer]
+        reminders[prayer].pop(chat_id)
+        if not reminders[prayer]:  # If no more chat_ids, remove the prayer key
+            del reminders[prayer]
+    else:
+        # Turn OFF: Add chat_id to reminders[prayer]
+        reminders.setdefault(prayer, {})[chat_id] = True
     await reminders_callback(callback_query)
 
 

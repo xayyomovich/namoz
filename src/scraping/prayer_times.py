@@ -147,8 +147,6 @@ async def scrape_prayer_times(region, month=None, day_type='bugun'):
                         # Calculate next prayer and time (using current time for consistency)
                         date_str = f"{datetime.now().year}-{month:02d}-{int(day_number):02d}"
                         next_prayer, next_prayer_time = await get_next_prayer({'prayer_times': prayer_times}, region, date_str)
-                        # next_prayer, next_prayer_time = get_next_prayer({'prayer_times': prayer_times}, region,
-                        #                                                 f"{datetime.now().year}-{month:02d}-{day_number:02d}")
 
                         monthly_data[day_number] = {
                             'location': city,
