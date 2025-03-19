@@ -363,4 +363,3 @@ async def get_next_prayer(prayer_times, region, date_str):
     return next_prayer, next_prayer_time
 
 
-

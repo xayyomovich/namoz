@@ -82,8 +82,8 @@ PRAYER_EMOJIS = {
 
 async def send_main_message(message, region=None, day_type='bugun'):
     """Send or update the main message with prayer times."""
-    global closest_prayer
     chat_id = message.chat.id
+    global closest_prayer
 
     # Check if region is provided; if not, fetch it from the database
     if not region:
