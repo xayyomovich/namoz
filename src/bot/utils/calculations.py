@@ -48,18 +48,18 @@ def get_ramadan_countdown(now: datetime, times: dict, countdown: str) -> str:
         time_until_sahar = bomdod_dt - now
         hours, remainder = divmod(time_until_sahar.seconds, 3600)
         minutes, _ = divmod(remainder, 60)
-        return f"Saharlikgacha - {hours}:{minutes:02d} qoldi"
+        return f"Saharlikkacha - {hours}:{minutes:02d} qoldi"
     elif now < shom_dt:  # Between Bomdod and Shom (e.g., 05:10 AM to 18:37 PM)
         time_until_iftar = shom_dt - now
         hours, remainder = divmod(time_until_iftar.seconds, 3600)
         minutes, _ = divmod(remainder, 60)
-        return f"Iftorlikgacha - {hours}:{minutes:02d} qoldi"
+        return f"Iftorlikkacha - {hours}:{minutes:02d} qoldi"
     else:  # After Shom (e.g., 18:37 PM onwards)
         next_bomdod_dt = bomdod_dt + timedelta(days=1)
         time_until_sahar = next_bomdod_dt - now
         hours, remainder = divmod(time_until_sahar.seconds, 3600)
         minutes, _ = divmod(remainder, 60)
-        return f"Saharlikgacha - {hours}:{minutes:02d} qoldi"
+        return f"Saharlikkacha - {hours}:{minutes:02d} qoldi"
 
 
 async def calculate_countdown_message(day_type, next_prayer, next_prayer_time, closest_prayer, region, countdown,
@@ -93,8 +93,7 @@ async def calculate_countdown_message(day_type, next_prayer, next_prayer_time, c
 
     if day_type == 'bugun' and updated_next_prayer and updated_next_prayer_time != 'N/A':
         message_text = (
-            f"{updated_next_prayer} gacha\n"
-            f"- {updated_countdown} ⏰ qoldi"
+            f"<code><b>{updated_next_prayer}</b> gacha <b>-{updated_countdown}</b> qoldi </code>"
         )
     elif day_type == 'bugun' and closest_prayer == "Xufton" and (
             not updated_next_prayer or updated_next_prayer_time == 'N/A'):
@@ -120,7 +119,7 @@ async def calculate_countdown_message(day_type, next_prayer, next_prayer_time, c
                     updated_next_prayer_time = bomdod_time
                     message_text = (
                         f"Ertangi Bomdod gacha\n"
-                        f"- {updated_countdown} ⏰ qoldi"
+                        f"<code>-{updated_countdown} ⏰ qoldi</code>"
                     )
                 except Exception as e:
                     logger.error(f"Error calculating countdown to tomorrow's Bomdod: {str(e)}")
@@ -147,7 +146,6 @@ async def calculate_islamic_date(date_str):
     except Exception as e:
         logger.error(f"Error calculating Islamic date for {date_str}: {e}")
         return "N/A"
-
 
 
 

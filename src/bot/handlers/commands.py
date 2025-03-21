@@ -82,8 +82,8 @@ PRAYER_EMOJIS = {
 
 async def send_main_message(message, region=None, day_type='bugun'):
     """Send or update the main message with prayer times."""
-    chat_id = message.chat.id
     global closest_prayer
+    chat_id = message.chat.id
 
     # Check if region is provided; if not, fetch it from the database
     if not region:
@@ -171,7 +171,7 @@ async def send_main_message(message, region=None, day_type='bugun'):
     )
     if day_type == 'bugun':
         # Add countdown text only for today
-        message_text += f"{iftar_text} ⏰\n"
+        message_text += f"<code><b>{iftar_text}</b></code>\n"
     message_text += f"------------------------\n"
 
     # Add prayer times table with emojis, bold, and tick for 'bugun', or just list for 'erta'
@@ -193,8 +193,12 @@ async def send_main_message(message, region=None, day_type='bugun'):
         # Build prayer list with emojis, bolding exact time, and adding tick
         for prayer, time_str in times['prayer_times'].items():
             emoji = PRAYER_EMOJIS.get(prayer, '⏰')
-            tick = " ✅" if prayer == closest_prayer else ""
-            message_text += f"{emoji} {prayer}: {time_str}{tick}\n"
+            if prayer == closest_prayer:
+                # Use blockquote with bold for the closest prayer
+                message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b></blockquote>\n"
+            else:
+                # Regular formatting for other prayers
+                message_text += f"{emoji} {prayer}: {time_str}\n"
     else:  # 'erta'
         # Build simple prayer list with emojis for tomorrow
         for prayer, time_str in times['prayer_times'].items():
@@ -206,8 +210,7 @@ async def send_main_message(message, region=None, day_type='bugun'):
     # Add next prayer countdown only for 'bugun'
     if day_type == 'bugun' and next_prayer and next_prayer_time != 'N/A':
         message_text += (
-            f"{next_prayer} gacha\n"
-            f"- {countdown} ⏰qoldi"
+            f"<code><b>{next_prayer}</b> gacha <b>-{countdown}</b> qoldi</code>"
         )
     elif day_type == 'bugun' and closest_prayer == "Xufton" and (not next_prayer or next_prayer_time == 'N/A'):
         # All prayers for today have passed (Xufton is the closest and no next prayer)
@@ -230,15 +233,14 @@ async def send_main_message(message, region=None, day_type='bugun'):
                     minutes, seconds = divmod(remainder, 60)
                     countdown = f"{hours}:{minutes:02d}"
                     message_text += (
-                        f"Bomdod gacha\n"
-                        f"- {countdown} ⏰qoldi"
+                        f"<code>Bomdod gacha-{countdown} ⏰ qoldi</code>"
                     )
                 except Exception as e:
                     logger.error(f"Error calculating countdown to tomorrow's Bomdod: {str(e)}")
 
 
     # Send the formatted message with Markdown parsing for bold
-    sent_message = await message.answer(message_text, parse_mode='Markdown')
+    sent_message = await message.answer(message_text, parse_mode='HTML')
 
     # Log the message for future updates
     await log_message(chat_id, sent_message.message_id, day_type)
@@ -303,7 +305,6 @@ def register_commands(dp: Dispatcher):
     dp.message.register(tomorrow_handler, F.text == "Ertaga")
     dp.message.register(ramadan_calendar_handler, F.text == "Ramazon taqvimi")
     dp.message.register(settings_handler, F.text == "Sozlamalar")
-
 
 
 

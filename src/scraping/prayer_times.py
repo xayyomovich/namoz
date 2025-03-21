@@ -1,6 +1,7 @@
 import json
 import aiohttp
 import logging
+import asyncio
 from bs4 import BeautifulSoup
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from datetime import datetime, timedelta
@@ -74,9 +75,9 @@ async def scrape_prayer_times(region, month=None, day_type='bugun'):
         month = datetime.now().month
 
     day_classes = {
-        'kecha': 'p_day kecha',
-        'bugun': 'p_day bugun',
-        'erta': 'p_day erta'
+        'kecha': ['p_day kecha', 'juma kecha'],
+        'bugun': ['p_day bugun', 'juma bugun'],
+        'erta': ['p_day erta', 'juma erta']
     }
 
     if day_type not in day_classes and day_type != 'month':
@@ -86,7 +87,7 @@ async def scrape_prayer_times(region, month=None, day_type='bugun'):
     try:
         # Use aiohttp for asynchronous HTTP request
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as response:
+            async with session.get(url, timeout=20) as response:
                 response.raise_for_status()  # raise_for_status() - checks whether the HTTP request was successful. If the request failed, it raises an exception.
                 html_text = await response.text()  # response.text - returns the body of the webpage as a Unicode string.
                 soup = BeautifulSoup(html_text, 'html.parser')  # 'html.parser' is the built-in Python HTML parser
@@ -99,7 +100,7 @@ async def scrape_prayer_times(region, month=None, day_type='bugun'):
 
                 if day_type == 'month':
                     # Scrape all days in the month
-                    all_rows = soup.find_all('tr', class_=lambda c: c and 'p_day' in c)
+                    all_rows = soup.find_all('tr', class_=lambda c: c and ('p_day' in c or 'juma' in c))
                     # print(all_rows)
                     if not all_rows:
                         return None
@@ -159,23 +160,16 @@ async def scrape_prayer_times(region, month=None, day_type='bugun'):
                     return monthly_data
                 else:
                     # Single day scraping (kecha, bugun, erta)
-                    day_row = soup.find('tr', class_=day_classes[day_type])
+                    # Updated to match any of the possible classes for the day type
+                    day_row = None
+                    for class_name in day_classes[day_type]:
+                        day_row = soup.find('tr', class_=class_name)
+                        if day_row:
+                            break
                     if not day_row:
                         return None
                     # print(day_row)
-                    """
-                    <tr class="p_day bugun">
-                    <td>3</td>
-                    <td>3</td>
-                    <td>Душанба</td>
-                    <td class="sahar bugun">05:24</td>
-                    <td>06:42</td>
-                    <td>12:23</td>
-                    <td>16:20</td>
-                    <td class="iftor bugun">18:07</td>
-                    <td>19:22</td>
-                    </tr>
-                    """
+
 
                     # Extract cells and date information
                     cells = day_row.find_all('td')
@@ -305,23 +299,49 @@ async def save_monthly_prayer_times(region, month, year, data):
 
 
 ## New function to cache monthly prayer times
+## Cache monthly prayer times with retry for failed regions
 async def cache_monthly_prayer_times():
-    """Cache prayer times for all regions for the entire current month"""
+    """Cache prayer times for all regions for the entire current month, with retries for failed regions."""
     now = datetime.now()
     year = now.year
     month = now.month
-    for region_name, region_code in LOCATION_MAP.items():
-        try:
-            logger.info(f"Caching prayer times for {region_name} ({region_code}) for {year}-{month}")
-            # Scrape the entire month
-            monthly_times = await scrape_prayer_times_async(region_code, month, 'month')
-            if monthly_times:
-                await save_monthly_prayer_times(region_code, month, year, monthly_times)
-                logger.info(f"Cached prayer times for {region_name} for {year}-{month}")
+    max_retries = 3  # Maximum number of retry attempts for failed regions
+    retry_delay = 30  # Delay between retry attempts (in seconds)
+
+    # Initial list of regions to scrape
+    regions_to_scrape = list(LOCATION_MAP.items())  # List of (region_name, region_code) tuples
+    attempt = 1
+
+    while regions_to_scrape and attempt <= max_retries:
+        failed_regions = []
+        logger.info(f"Attempt {attempt}/{max_retries}: Scraping prayer times for {len(regions_to_scrape)} regions")
+
+        for region_name, region_code in regions_to_scrape:
+            try:
+                logger.info(f"Caching prayer times for {region_name} ({region_code}) for {year}-{month}")
+                monthly_times = await scrape_prayer_times_async(region_code, month, 'month')
+                if monthly_times:
+                    await save_monthly_prayer_times(region_code, month, year, monthly_times)
+                    logger.info(f"Cached prayer times for {region_name} for {year}-{month}")
+                else:
+                    logger.error(f"Failed to scrape prayer times for {region_name}")
+                    failed_regions.append((region_name, region_code))
+            except Exception as e:
+                logger.error(f"Error caching prayer times for {region_name}: {e}")
+                failed_regions.append((region_name, region_code))
+
+        # Update the list of regions to scrape in the next attempt
+        regions_to_scrape = failed_regions
+
+        if regions_to_scrape:
+            if attempt < max_retries:
+                logger.info(f"Failed to scrape {len(regions_to_scrape)} regions. Retrying after {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+                attempt += 1
             else:
-                logger.error(f"Failed to scrape prayer times for {region_name}")
-        except Exception as e:
-            logger.error(f"Error caching prayer times for {region_name}: {e}")
+                logger.error(f"Max retries ({max_retries}) reached. Failed to scrape the following regions: {[name for name, _ in regions_to_scrape]}")
+        else:
+            logger.info("Successfully cached prayer times for all regions!")
 
 
 ## Get next prayer (unchanged, but updated to use logger)

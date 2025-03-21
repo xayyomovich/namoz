@@ -133,6 +133,7 @@ async def _update_message_task(chat_id):
                 # print(f"New next prayer: {next_prayer} at {next_prayer_time}")
             else:
                 logger.error(f"No cached data for {tomorrow_date} for {times['location']}. Retrying in next cycle.")
+                # Schedule the next update (every 300 seconds)
                 await asyncio.sleep(300)
                 await _update_message_task(chat_id)
                 return
@@ -171,7 +172,6 @@ async def _update_message_task(chat_id):
                     message_cache[chat_id]['next_prayer_time'] = next_prayer_time
 
         # Calculate countdown to next prayer
-        closest_prayer = None
         countdown = "N/A"
         reminder_triggered = False
         if next_prayer != "N/A" and next_prayer_time != "N/A":
@@ -195,14 +195,12 @@ async def _update_message_task(chat_id):
             reminder_enabled = chat_id not in reminders.get(next_prayer, {})
             # Check if the reminder has already triggered for this prayer today
             has_triggered = reminders_triggered.get(chat_id, {}).get(next_prayer) == current_date
-
-            # Trigger reminder if: time is ~5 minutes, reminder is enabled, and hasn't triggered today
-            if 295 <= total_seconds_until <= 305 and reminder_enabled and not has_triggered:
+            # 240, 600
+            if 240 <= total_seconds_until <= 600 and reminder_enabled and not has_triggered:
                 reminder_triggered = True
                 # Mark this prayer as triggered for today
                 reminders_triggered.setdefault(chat_id, {})[next_prayer] = current_date
-                print(
-                    f"Reminder triggered for {next_prayer} at {current_time} (time until: {int(total_seconds_until)} seconds)")
+                # print(f"Reminder triggered for {next_prayer} at {current_time} (time until: {int(total_seconds_until)} seconds)")
                 new_message = await send_new_main_message(chat_id, times, current_time, islamic_date, next_prayer,
                                                           next_prayer_time, countdown)
                 try:
@@ -213,6 +211,7 @@ async def _update_message_task(chat_id):
                 message_id = new_message.message_id
 
                 # Use the new function to calculate the countdown message
+
 
         # Find the closest prayer time for highlighting
         closest_prayer = None
@@ -249,13 +248,17 @@ async def _update_message_task(chat_id):
             f"🗓 {times['date']}\n"
             f"☪️ {islamic_date}\n"
             f"------------------------\n"
-            f"{iftar_text} ⏰\n"
+            f"<code><b>{iftar_text}</b></code>\n"
             f"------------------------\n"
         )
         for prayer, time_str in times['prayer_times'].items():
             emoji = PRAYER_EMOJIS.get(prayer, '⏰')
-            tick = " ✅" if prayer == closest_prayer else ""
-            message_text += f"{emoji} {prayer}: {time_str}{tick}\n"
+            if prayer == closest_prayer:
+                # Use blockquote with bold for the closest prayer
+                message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b></blockquote>\n"
+            else:
+                # Regular formatting for other prayers
+                message_text += f"{emoji} {prayer}: {time_str}\n"
         message_text += f"------------------------\n"
         message_text += countdown_message
 
@@ -265,7 +268,7 @@ async def _update_message_task(chat_id):
                 chat_id=chat_id,
                 message_id=message_id,
                 text=message_text,
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
 
         # Schedule the next update (every 5 minutes)
@@ -292,7 +295,7 @@ async def send_new_main_message(chat_id, times, current_time, islamic_date, next
     Returns:
         Message: The sent message object.,
     """
-    # global closest_prayer
+    global closest_prayer
 
     now = datetime.now()
     iftar_text = get_ramadan_countdown(now, times, countdown)
@@ -328,17 +331,21 @@ async def send_new_main_message(chat_id, times, current_time, islamic_date, next
         f"🗓 {times['date']}\n"
         f"☪️ {islamic_date}\n"
         f"------------------------\n"
-        f"{iftar_text} ⏰\n"
+        f"<code><b>{iftar_text}</b></code>\n"
         f"------------------------\n"
     )
     for prayer, time_str in times['prayer_times'].items():
         emoji = PRAYER_EMOJIS.get(prayer, '⏰')
-        tick = " ✅" if prayer == closest_prayer else ""
-        message_text += f"{emoji} {prayer}: {time_str}{tick}\n"
+        if prayer == closest_prayer:
+            # Use blockquote with bold for the closest prayer
+            message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b></blockquote>\n"
+        else:
+            # Regular formatting for other prayers
+            message_text += f"{emoji} {prayer}: {time_str}\n"
     message_text += f"------------------------\n"
     message_text += countdown_message
 
-    new_message = await bot.send_message(chat_id, message_text, parse_mode='Markdown')
+    new_message = await bot.send_message(chat_id, message_text, parse_mode='HTML')
     await log_message(chat_id, new_message.message_id, 'bugun')  # Log the new message
     return new_message
 
@@ -350,67 +357,67 @@ def run_scheduler(loop: asyncio.AbstractEventLoop):
 
     def schedule_tasks():
         schedule.every(4).weeks.do(lambda: asyncio.run_coroutine_threadsafe(cache_monthly_prayer_times(), loop))
-        schedule.every().day.do(lambda: asyncio.run_coroutine_threadsafe(cleanup_old_messages(), loop))
+        # schedule.every().day.do(lambda: asyncio.run_coroutine_threadsafe(cleanup_old_messages(), loop))
 
         while True:
             schedule.run_pending()
-            time.sleep(60)
+            time.sleep(720)
 
     scheduler_thread = threading.Thread(target=schedule_tasks, daemon=True)
     scheduler_thread.start()
 
 
-async def cleanup_old_messages():
-    """Delete messages older than 24 hours from message_log.
-    - Queries messages in batches to handle large datasets.
-    - Deletes messages from Telegram with rate limiting.
-    - Cleans up the message_log table accordingly.
-    - Retries failed deletions.
-    """
-    try:
-        one_day_ago = (datetime.now() - timedelta(hours=24)).isoformat()
-        batch_size = 100  # Process messages in batches to avoid memory issues
-        deleted_count = 0
-
-        async with aiosqlite.connect(DATABASE_PATH, timeout=10) as db:
-            # Use a cursor to fetch messages in batches
-            async with db.execute(
-                'SELECT chat_id, message_id FROM message_log WHERE created_at < ? ORDER BY created_at ASC',
-                (one_day_ago,)
-            ) as cursor:
-                while True:
-                    old_messages = await cursor.fetchmany(batch_size)
-                    if not old_messages:
-                        break  # No more messages to process
-
-                    # Delete messages from Telegram with rate limiting
-                    for chat_id, message_id in old_messages:
-                        for attempt in range(3):  # Retry up to 3 times
-                            try:
-                                await bot.delete_message(chat_id, message_id)
-                                break  # Success, move to the next message
-                            except Exception as e:
-                                logger.error(f"Attempt {attempt + 1}: Error deleting message {message_id} for chat {chat_id}: {e}")
-                                if attempt == 2:  # Last attempt failed
-                                    logger.warning(f"Failed to delete message {message_id} for chat {chat_id} after 3 attempts. Skipping.")
-                                await asyncio.sleep(1)  # Wait 1 second before retrying to avoid rate limits
-
-                    # Delete this batch from the database
-                    await db.execute(
-                        'DELETE FROM message_log WHERE message_id IN ({})'.format(
-                            ','.join('?' for _ in old_messages)
-                        ),
-                        [message_id for _, message_id in old_messages]
-                    )
-                    await db.commit()
-                    deleted_count += len(old_messages)
-
-                    # Add a small delay to avoid hitting Telegram rate limits
-                    await asyncio.sleep(0.1)  # 100ms delay between batches
-
-        logger.info(f"Cleaned up {deleted_count} old messages")
-    except Exception as e:
-        logger.error(f"Error cleaning up old messages: {e}")
+# async def cleanup_old_messages():
+#     """Delete messages older than 24 hours from message_log.
+#     - Queries messages in batches to handle large datasets.
+#     - Deletes messages from Telegram with rate limiting.
+#     - Cleans up the message_log table accordingly.
+#     - Retries failed deletions.
+#     """
+#     try:
+#         one_day_ago = (datetime.now() - timedelta(hours=24)).isoformat()
+#         batch_size = 100  # Process messages in batches to avoid memory issues
+#         deleted_count = 0
+#
+#         async with aiosqlite.connect(DATABASE_PATH, timeout=10) as db:
+#             # Use a cursor to fetch messages in batches
+#             async with db.execute(
+#                 'SELECT chat_id, message_id FROM message_log WHERE created_at < ? ORDER BY created_at ASC',
+#                 (one_day_ago,)
+#             ) as cursor:
+#                 while True:
+#                     old_messages = await cursor.fetchmany(batch_size)
+#                     if not old_messages:
+#                         break  # No more messages to process
+#
+#                     # Delete messages from Telegram with rate limiting
+#                     for chat_id, message_id in old_messages:
+#                         for attempt in range(3):  # Retry up to 3 times
+#                             try:
+#                                 await bot.delete_message(chat_id, message_id)
+#                                 break  # Success, move to the next message
+#                             except Exception as e:
+#                                 logger.error(f"Attempt {attempt + 1}: Error deleting message {message_id} for chat {chat_id}: {e}")
+#                                 if attempt == 2:  # Last attempt failed
+#                                     logger.warning(f"Failed to delete message {message_id} for chat {chat_id} after 3 attempts. Skipping.")
+#                                 await asyncio.sleep(1)  # Wait 1 second before retrying to avoid rate limits
+#
+#                     # Delete this batch from the database
+#                     await db.execute(
+#                         'DELETE FROM message_log WHERE message_id IN ({})'.format(
+#                             ','.join('?' for _ in old_messages)
+#                         ),
+#                         [message_id for _, message_id in old_messages]
+#                     )
+#                     await db.commit()
+#                     deleted_count += len(old_messages)
+#
+#                     # Add a small delay to avoid hitting Telegram rate limits
+#                     await asyncio.sleep(0.1)  # 100ms delay between batches
+#
+#         logger.info(f"Cleaned up {deleted_count} old messages")
+#     except Exception as e:
+#         logger.error(f"Error cleaning up old messages: {e}")
 
 
 async def log_message(chat_id, message_id, message_type):
@@ -430,7 +437,6 @@ async def log_message(chat_id, message_id, message_type):
             logger.info(f"Logged message {message_id} for chat {chat_id}")
     except Exception as e:
         logger.error(f"Error logging message: {e}")
-
 
 
 

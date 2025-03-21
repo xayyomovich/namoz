@@ -40,7 +40,7 @@ async def location_callback(callback_query: types.CallbackQuery):
         await db.commit()
     await delete_previous_message(callback_query.bot, chat_id)
     new_message = await callback_query.message.answer(
-        f"Joylashuvingiz: {city}",
+        f"Joylashuvingiz {city}",
         reply_markup=get_main_keyboard()
     )
     user_state[chat_id] = {'level': 'main', 'last_message_id': new_message.message_id}
