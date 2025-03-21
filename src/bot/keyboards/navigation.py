@@ -5,25 +5,20 @@ from src.config.settings import LOCATION_MAP
 
 
 def get_main_keyboard():
-    """Build main reply keyboard with 2x1x2 layout."""
+    """Build main reply keyboard with 2x2 layout."""
     builder = ReplyKeyboardBuilder()
     builder.row(types.KeyboardButton(text="Bugun"), types.KeyboardButton(text="Ertaga"))
-    builder.row(types.KeyboardButton(text="Ramazon taqvimi"))
-    builder.row(types.KeyboardButton(text="Sozlamalar"))
+    builder.row(types.KeyboardButton(text="Ramazon taqvimi"), types.KeyboardButton(text="Sozlamalar"))
     markup = builder.as_markup(resize_keyboard=True)
-    print(f"Main keyboard markup: {markup}")  # Debug print
     return markup
 
 
 def get_settings_keyboard():
-    """Build settings submenu with inline buttons."""
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        types.KeyboardButton(text="Eslatish"),
-        types.KeyboardButton(text="Joylashuv"),
-        types.KeyboardButton(text="Orqaga")
-    )
-    return builder.as_markup()
+    """Build settings submenu with reply buttons."""
+    builder = ReplyKeyboardBuilder()
+    builder.row(types.KeyboardButton(text="Oldindan eslatish"), types.KeyboardButton(text="Joylashuvni o'zgartirish"))
+    builder.row(types.KeyboardButton(text="Orqaga"))
+    return builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
 
 
 def get_location_keyboard():

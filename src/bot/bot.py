@@ -1,20 +1,18 @@
 import asyncio
 import os
-from datetime import datetime, timedelta
-
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from src.config.settings import BOT_TOKEN, DATABASE_PATH
 from src.bot.handlers.commands import register_commands
-from src.bot.handlers.callbacks import register_callbacks
-from src.bot.states.location import register_states
-from src.bot.utils.reminders import run_scheduler
+from src.bot.handlers.callbacks import register_callbacks, register_message_handlers
 import aiosqlite
 import threading
 import logging
+from src.scraping.prayer_times import cache_monthly_prayer_times
+from src.bot.utils.reminders import run_scheduler
 
-# Configure logging
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -26,7 +24,6 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Set default properties for the bot
 default = DefaultBotProperties(parse_mode='Markdown')
 
 bot = Bot(token=BOT_TOKEN, default=default)
@@ -35,13 +32,16 @@ dp = Dispatcher(storage=storage)
 
 
 async def initialize_database():
-    """Initialize database with necessary tables."""
+    """Initialize database with necessary tables.
+    - Creates directories if they don’t exist and sets up users, prayer_times, and message_log tables.
+    - Ensures the database is ready for bot operations.
+    """
     db_dir = os.path.dirname(DATABASE_PATH)
-    os.makedirs(db_dir, exist_ok=True)
+    os.makedirs(db_dir, exist_ok=True)  # Creates database directory if it doesn’t exist.
     logger.info(f"Database path: {DATABASE_PATH}")
 
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        # Users table
+        # Users table to store chat info
         await db.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 chat_id INTEGER PRIMARY KEY,
@@ -51,7 +51,7 @@ async def initialize_database():
             )
         ''')
 
-        # Prayer times table
+        # Prayer times table to store cached prayer data
         await db.execute('''
             CREATE TABLE IF NOT EXISTS prayer_times (
                 region TEXT NOT NULL,
@@ -62,7 +62,7 @@ async def initialize_database():
             )
         ''')
 
-        # Message log table for tracking messages
+        # Message log table to track sent messages
         await db.execute('''
             CREATE TABLE IF NOT EXISTS message_log (
                 chat_id INTEGER,
@@ -73,90 +73,45 @@ async def initialize_database():
             )
         ''')
 
-        await db.commit()
+        await db.commit()  # Commits changes to the database.
         logger.info("Database initialized successfully")
 
 
 async def on_startup(bot):
-    """Handle bot startup event."""
+    """Handle bot startup event.
+    - Logs startup, initializes the database, and caches monthly prayer times.
+    - Starts the scheduler thread for reminders and periodic tasks.
+    """
     logger.info('Bot starting...')
-    await initialize_database()  # Ensure database is initialized
+    await initialize_database()  # Ensure database is set up before proceeding.
 
-    # Initial cache of prayer times for all regions
-    from src.scraping.prayer_times import scrape_prayer_times
-    from src.config.settings import LOCATION_MAP
-    import json
+    await cache_monthly_prayer_times()
+    logger.info('Monthly prayer times cached successfully on startup!')
 
-    current_month = asyncio.create_task(cache_monthly_prayer_times(bot))
-
-    logger.info('Bot started successfully!')
-    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    loop = asyncio.get_event_loop()  # Get the current event loop
+    scheduler_thread = threading.Thread(target=run_scheduler, args=(loop,), daemon=True)
     scheduler_thread.start()
-
-
-async def cache_monthly_prayer_times(bot):
-    """Cache prayer times for all regions for the current month."""
-    from src.config.settings import LOCATION_MAP
-    from src.scraping.prayer_times import scrape_prayer_times
-    import json
-
-    logger.info("Starting to cache monthly prayer times for all regions")
-    current_month = datetime.now().month
-
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        for city, region in LOCATION_MAP.items():
-            try:
-                logger.info(f"Caching data for {city} (region {region})")
-
-                # Get today's data
-                today_data = scrape_prayer_times(region, current_month, 'bugun')
-                if today_data and 'prayer_times' in today_data:
-                    today_date = datetime.now().strftime("%Y-%m-%d")
-                    times_json = json.dumps(today_data['prayer_times'])
-
-                    await db.execute(
-                        '''INSERT OR REPLACE INTO prayer_times 
-                           (region, date, times) VALUES (?, ?, ?)''',
-                        (region, today_date, times_json)
-                    )
-
-                # Get tomorrow's data
-                tomorrow = datetime.now() + timedelta(days=1)
-                tomorrow_month = tomorrow.month
-                tomorrow_data = scrape_prayer_times(region, tomorrow_month, 'erta')
-                if tomorrow_data and 'prayer_times' in tomorrow_data:
-                    tomorrow_date = tomorrow.strftime("%Y-%m-%d")
-                    times_json = json.dumps(tomorrow_data['prayer_times'])
-
-                    await db.execute(
-                        '''INSERT OR REPLACE INTO prayer_times 
-                           (region, date, times) VALUES (?, ?, ?)''',
-                        (region, tomorrow_date, times_json)
-                    )
-
-                await db.commit()
-            except Exception as e:
-                logger.error(f"Error caching data for {city}: {str(e)}")
-
-    logger.info("Finished caching monthly prayer times")
+    logger.info('Scheduler thread started successfully!')
 
 
 async def main():
-    """Main function to start the bot."""
-    from datetime import datetime, timedelta
-
+    """Main function to start the bot.
+    - Registers all handlers for commands, callbacks, and states.
+    - Sets up the startup event and starts polling for updates.
+    """
     # Register all handlers
-    register_commands(dp)
-    register_callbacks(dp)
-    register_states(dp)
+    register_commands(dp)  # Registers command handlers (e.g., /start, /bugun).
+    register_callbacks(dp)  # Registers callback query handlers.
+    register_message_handlers(dp)
+    loop = asyncio.get_event_loop()
+    run_scheduler(loop)
 
     # Register startup handler
-    dp.startup.register(on_startup)
+    dp.startup.register(on_startup)  # Runs on_startup when the bot starts.
 
     # Start the bot
-    await dp.start_polling(bot)
+    await dp.start_polling(bot)  # Keeps the bot running and listening for updates.
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
-
+    asyncio.run(main())  # Runs the main event loop.

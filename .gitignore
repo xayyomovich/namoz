@@ -10,3 +10,5 @@ venv/
 *.sqlite
 .env
 cache/
+static/ramadan/*
+
