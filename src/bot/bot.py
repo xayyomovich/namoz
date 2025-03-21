@@ -1,23 +1,18 @@
 import asyncio
 import os
-from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from src.config.settings import BOT_TOKEN, DATABASE_PATH
 from src.bot.handlers.commands import register_commands
 from src.bot.handlers.callbacks import register_callbacks, register_message_handlers
-from src.bot.utils.reminders import run_scheduler
 import aiosqlite
 import threading
 import logging
-from src.scraping.prayer_times import cache_monthly_prayer_times  # Import the function from prayer_times.py
+from src.scraping.prayer_times import cache_monthly_prayer_times
 from src.bot.utils.reminders import run_scheduler
 
 
-# Configure logging
-# - Sets up logging to both a file (bot.log) and the console with a detailed format.
-# - Level INFO ensures we capture informational messages and errors.
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -29,13 +24,8 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Set default properties for the bot
-# - parse_mode='Markdown' allows formatting in messages (e.g., bold, italics).
 default = DefaultBotProperties(parse_mode='Markdown')
 
-# Initialize bot, storage, and dispatcher
-# - Bot uses the token from settings.py and default properties.
-# - MemoryStorage handles finite state machine (FSM) states in memory.
 bot = Bot(token=BOT_TOKEN, default=default)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
@@ -95,14 +85,9 @@ async def on_startup(bot):
     logger.info('Bot starting...')
     await initialize_database()  # Ensure database is set up before proceeding.
 
-    # Cache monthly prayer times on startup
-    # - Uses the version from prayer_times.py, which scrapes the full month.
-    # - Awaiting ensures it completes before the bot fully starts (blocking startup).
     await cache_monthly_prayer_times()
     logger.info('Monthly prayer times cached successfully on startup!')
 
-    # Start scheduler in a separate thread
-    # - Daemon=True ensures the thread stops when the main program exits.
     loop = asyncio.get_event_loop()  # Get the current event loop
     scheduler_thread = threading.Thread(target=run_scheduler, args=(loop,), daemon=True)
     scheduler_thread.start()

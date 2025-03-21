@@ -18,7 +18,7 @@ import os
 logger = logging.getLogger(__name__)
 
 
-async def start_command(message: types.Message, state: FSMContext):
+async def start_command(message: types.Message):
     """Handle /start command."""
     chat_id = message.chat.id
     username = message.from_user.username or message.from_user.first_name

@@ -57,20 +57,7 @@ PRAYER_MAP = {
 ## Scrape prayer times from islom.uz (your original function, now enhanced for monthly scraping)
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10), retry=retry_if_exception_type(aiohttp.ClientError))
 async def scrape_prayer_times(region, month=None, day_type='bugun'):
-    """
-    Scrape prayer times from islom.uz for a region.
-    Args:
-        region (str): Region code (e.g., '27' for Toshkent).
-        month (int): Month number (1-12), optional.
-        day_type (str): 'bugun' for today, 'erta' for tomorrow, 'kecha' for yesterday, or 'month' for full month.
-    Returns:
-        dict: For 'bugun'/'erta'/'kecha': {'location': ..., 'date': ..., 'prayer_times': {...}, 'day_type': ..., 'next_prayer': ..., 'next_prayer_time': ...}
-              For 'month': {'1': {...}, '2': {...}, ...} where each day has the same structure.
-        None: On error.
-    Example:
-        For day_type='bugun': {'location': 'Toshkent', 'date': 'Dushanba, 3-Mart', 'prayer_times': {'Bomdod (Saharlik)': '05:24', ...}, 'day_type': 'bugun', 'next_prayer': 'Peshin', 'next_prayer_time': '12:23'}
-        For day_type='month': {'1': {'location': 'Toshkent', 'date': 'Dushanba, 1-Mart', 'prayer_times': {...}, 'day_type': 'month'}, ...}
-    """
+
     if month is None:
         month = datetime.now().month
 
