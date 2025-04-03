@@ -8,7 +8,8 @@ def get_main_keyboard():
     """Build main reply keyboard with 2x2 layout."""
     builder = ReplyKeyboardBuilder()
     builder.row(types.KeyboardButton(text="Bugun"), types.KeyboardButton(text="Ertaga"))
-    builder.row(types.KeyboardButton(text="Ramazon taqvimi"), types.KeyboardButton(text="Sozlamalar"))
+    # builder.row(types.KeyboardButton(text="Ramazon taqvimi"), types.KeyboardButton(text="Sozlamalar"))
+    builder.row(types.KeyboardButton(text="Sozlamalar"))
     markup = builder.as_markup(resize_keyboard=True)
     return markup
 

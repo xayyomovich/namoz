@@ -4,7 +4,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from src.bot.keyboards.navigation import get_main_keyboard, get_location_keyboard, get_settings_keyboard
-from src.bot.utils.reminders import reminders
+from src.bot.utils.reminders import reminders, logger
 from src.config.settings import LOCATION_MAP, DATABASE_PATH, REVERSE_LOCATION_MAP
 from src.bot.handlers.commands import send_main_message
 
@@ -14,20 +14,14 @@ user_state = {}  # {chat_id: {'level': 'main'|'settings'|'reminders', 'last_mess
 
 async def delete_previous_message(bot, chat_id, message_id=None):
     if chat_id in user_state and 'last_message_id' in user_state[chat_id]:
-        if user_state[chat_id].get('level') == 'ramadan' and message_id != user_state[chat_id]['last_message_id']:
-            return  # Don’t delete Ramadan message unless explicitly replaced
         try:
-            await bot.delete_message(chat_id, user_state[chat_id]['last_message_id'])
-        except Exception:
-            pass
-
-
-# async def ramadan_taqvim_command(message: types.Message):
-#     chat_id = message.chat.id
-#     # Assume this generates the Ramadan calendar
-#     ramadan_text = "Ramazon taqvimi: ... (your logic here) ..."
-#     new_message = await message.answer(ramadan_text, reply_markup=get_main_keyboard())
-#     user_state[chat_id] = {'level': 'ramadan', 'last_message_id': new_message.message_id}
+            last_message_id = user_state[chat_id]['last_message_id']
+            await bot.delete_message(chat_id, last_message_id)
+            logger.info(f"Deleted previous message {last_message_id} for chat {chat_id}")
+            # Clear the last_message_id after deletion
+            user_state[chat_id]['last_message_id'] = None
+        except Exception as e:
+            logger.error(f"Error deleting message for chat {chat_id}: {e}")
 
 
 async def location_callback(callback_query: types.CallbackQuery):

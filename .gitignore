@@ -7,8 +7,9 @@ env/
 venv/
 .venv/
 *.log
-*.sqlite
+src/database/prayer_times.db  # Exclude the DB file, created at runtime
 .env
 cache/
-static/ramadan/*
+.idea/
+.gitignore~
 

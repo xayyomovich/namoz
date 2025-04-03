@@ -1,12 +1,10 @@
 import asyncio
-import os
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
-from src.config.settings import BOT_TOKEN, DATABASE_PATH
-from src.bot.handlers.commands import register_commands
+from src.config.settings import BOT_TOKEN
+# from src.bot.handlers.commands import register_commands
 from src.bot.handlers.callbacks import register_callbacks, register_message_handlers
-import aiosqlite
 import threading
 import logging
 from src.scraping.prayer_times import cache_monthly_prayer_times
@@ -31,60 +29,15 @@ storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
 
-async def initialize_database():
-    """Initialize database with necessary tables.
-    - Creates directories if they don’t exist and sets up users, prayer_times, and message_log tables.
-    - Ensures the database is ready for bot operations.
-    """
-    db_dir = os.path.dirname(DATABASE_PATH)
-    os.makedirs(db_dir, exist_ok=True)  # Creates database directory if it doesn’t exist.
-    logger.info(f"Database path: {DATABASE_PATH}")
-
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        # Users table to store chat info
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                chat_id INTEGER PRIMARY KEY,
-                username TEXT,
-                region TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        # Prayer times table to store cached prayer data
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS prayer_times (
-                region TEXT NOT NULL,
-                date TEXT NOT NULL,
-                times TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (region, date)
-            )
-        ''')
-
-        # Message log table to track sent messages
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS message_log (
-                chat_id INTEGER,
-                message_id INTEGER,
-                type TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (chat_id, message_id)
-            )
-        ''')
-
-        await db.commit()  # Commits changes to the database.
-        logger.info("Database initialized successfully")
-
-
 async def on_startup(bot):
     """Handle bot startup event.
     - Logs startup, initializes the database, and caches monthly prayer times.
     - Starts the scheduler thread for reminders and periodic tasks.
     """
     logger.info('Bot starting...')
+    from src.database.database import initialize_database, migrate_db
     await initialize_database()  # Ensure database is set up before proceeding.
-
+    await migrate_db()
     await cache_monthly_prayer_times()
     logger.info('Monthly prayer times cached successfully on startup!')
 
@@ -100,6 +53,7 @@ async def main():
     - Sets up the startup event and starts polling for updates.
     """
     # Register all handlers
+    from src.bot.handlers.commands import register_commands
     register_commands(dp)  # Registers command handlers (e.g., /start, /bugun).
     register_callbacks(dp)  # Registers callback query handlers.
     register_message_handlers(dp)

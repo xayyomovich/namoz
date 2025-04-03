@@ -7,7 +7,8 @@ import schedule
 import time
 import threading
 
-from src.bot.utils.calculations import calculate_islamic_date, get_ramadan_countdown, calculate_countdown_message
+from src.database.database import compute_content_hash, get_message_hash
+from src.bot.utils.calculations import calculate_islamic_date, calculate_countdown_message
 # from src.bot.handlers.commands import get_ramadan_countdown
 from src.config.settings import BOT_TOKEN, DATABASE_PATH
 from src.scraping.prayer_times import fetch_cached_prayer_times, get_next_prayer, cache_monthly_prayer_times
@@ -97,7 +98,6 @@ async def _update_message_task(chat_id):
             expected_date = f"{now.year}-{str(month_num).zfill(2)}-{str(day).zfill(2)}"
         except ValueError as e:
             logger.error(f"Invalid day format in expected_date: {expected_date[0]}. Error: {e}")
-            # Handle the error, perhaps by setting a default date or skipping the update
             expected_date = f"{now.year}-{str(month_num).zfill(2)}-01"
 
         if current_date != expected_date:
@@ -115,11 +115,10 @@ async def _update_message_task(chat_id):
                 message_cache[chat_id]['islamic_date'] = islamic_date
             else:
                 logger.error(f"No cached data for {tomorrow_date} for {times['location']}. Retrying in next cycle.")
-                # Schedule the next update (every 300 seconds)
-                await asyncio.sleep(300)
+                # Schedule the next update (every 600 seconds = 10 minutes)
+                await asyncio.sleep(600)
                 await _update_message_task(chat_id)
                 return
-
 
         if next_prayer_time <= current_time:
             next_prayer, next_prayer_time = await get_next_prayer(times, times['location'], current_date)
@@ -161,7 +160,6 @@ async def _update_message_task(chat_id):
             minutes, seconds = divmod(remainder, 60)
             countdown = f"{hours}:{int(minutes):02d}"
 
-
             # Trigger reminder 5 minutes before the prayer
             reminder_enabled = chat_id not in reminders.get(next_prayer, {})
             has_triggered = reminders_triggered.get(chat_id, {}).get(next_prayer) == current_date
@@ -176,7 +174,8 @@ async def _update_message_task(chat_id):
                     logger.error(f"Error deleting message {message_id} for chat {chat_id}: {e}")
                 message_cache[chat_id]['message_id'] = new_message.message_id
                 message_id = new_message.message_id
-
+                # Log the new message with content hash
+                await log_message(chat_id, new_message.message_id, "reminder", new_message.text, new_message.reply_markup)
 
         # Find the closest prayer time for highlighting
         closest_prayer = None
@@ -205,7 +204,7 @@ async def _update_message_task(chat_id):
         message_cache[chat_id]['next_prayer_time'] = next_prayer_time
 
         # Ramadan countdown logic
-        iftar_text = get_ramadan_countdown(now, times, countdown)
+        # iftar_text = get_ramadan_countdown(now, times, countdown)
 
         # Build the message text
         message_text = (
@@ -213,8 +212,8 @@ async def _update_message_task(chat_id):
             f"🗓 {times['date']}\n"
             f"☪️ {islamic_date}\n"
             f"------------------------\n"
-            f"<code><b>{iftar_text}</b></code>\n"
-            f"------------------------\n"
+            # f"<code><b>{iftar_text}</b></code>\n"
+            # f"------------------------\n"
         )
         for prayer, time_str in times['prayer_times'].items():
             emoji = PRAYER_EMOJIS.get(prayer, '⏰')
@@ -225,23 +224,38 @@ async def _update_message_task(chat_id):
         message_text += f"------------------------\n"
         message_text += countdown_message
 
-        # Update the message if no reminder was triggered
-        if not reminder_triggered:
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=message_text,
-                parse_mode='HTML'
-            )
+        # Compare content before updating
+        new_hash = compute_content_hash(message_text, None)  # No reply_markup in this case
+        current_hash = await get_message_hash(chat_id, message_id)
 
-        # Schedule the next update (every 5 minutes)
-        await asyncio.sleep(300)
+        # Update the message if no reminder was triggered and content has changed
+        if not reminder_triggered:
+            if current_hash == new_hash:
+                logger.info(f"No changes to message {message_id} for chat {chat_id}, skipping update")
+            else:
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=message_text,
+                    parse_mode='HTML'
+                )
+                # Update the content hash in the database
+                async with aiosqlite.connect(DATABASE_PATH) as db:
+                    await db.execute(
+                        'UPDATE message_log SET content_hash = ? WHERE chat_id = ? AND message_id = ?',
+                        (new_hash, chat_id, message_id)
+                    )
+                    await db.commit()
+                logger.info(f"Updated message {message_id} for chat {chat_id} with new hash {new_hash}")
+
+        # Schedule the next update (every 10 minutes)
+        await asyncio.sleep(600)
         await _update_message_task(chat_id)
 
     except Exception as e:
         logger.error(f"Error updating message: {e}")
         print(f"Exception caught: {e}")
-        await asyncio.sleep(300)
+        await asyncio.sleep(600)
         await _update_message_task(chat_id)
 
 
@@ -261,7 +275,7 @@ async def send_new_main_message(chat_id, times, current_time, islamic_date, next
     global closest_prayer
 
     now = datetime.now()
-    iftar_text = get_ramadan_countdown(now, times, countdown)
+    # iftar_text = get_ramadan_countdown(now, times, countdown)
 
     # Find the closest prayer for highlighting
     closest_prayer = None
@@ -294,8 +308,8 @@ async def send_new_main_message(chat_id, times, current_time, islamic_date, next
         f"🗓 {times['date']}\n"
         f"☪️ {islamic_date}\n"
         f"------------------------\n"
-        f"<code><b>{iftar_text}</b></code>\n"
-        f"------------------------\n"
+        # f"<code><b>{iftar_text}</b></code>\n"
+        # f"------------------------\n"
     )
     for prayer, time_str in times['prayer_times'].items():
         emoji = PRAYER_EMOJIS.get(prayer, '⏰')
@@ -307,7 +321,8 @@ async def send_new_main_message(chat_id, times, current_time, islamic_date, next
     message_text += countdown_message
 
     new_message = await bot.send_message(chat_id, message_text, parse_mode='HTML')
-    await log_message(chat_id, new_message.message_id, 'bugun')
+    await log_message(chat_id, new_message.message_id, 'bugun', new_message.text, new_message.reply_markup)
+
     return new_message
 
 
@@ -327,21 +342,26 @@ def run_scheduler(loop: asyncio.AbstractEventLoop):
     scheduler_thread.start()
 
 
-async def log_message(chat_id, message_id, message_type):
+async def log_message(chat_id, message_id, message_type, text, reply_markup=None):
     """Log a message to the database for tracking.
     Args:
         chat_id (int): Telegram chat ID.
         message_id (int): ID of the message.
         message_type (str): Type of message (e.g., 'bugun').
+        text (str): The message text.
+        reply_markup: The reply markup (e.g., InlineKeyboardMarkup).
     """
     try:
+        # Compute the content hash
+        content_hash = compute_content_hash(text, reply_markup)
+
         async with aiosqlite.connect(DATABASE_PATH, timeout=10) as db:
             await db.execute(
-                'INSERT INTO message_log (chat_id, message_id, type, created_at) VALUES (?, ?, ?, ?)',
-                (chat_id, message_id, message_type, datetime.now().isoformat())
+                'INSERT INTO message_log (chat_id, message_id, type, created_at, content_hash) VALUES (?, ?, ?, ?, ?)',
+                (chat_id, message_id, message_type, datetime.now().isoformat(), content_hash)
             )
             await db.commit()
-            logger.info(f"Logged message {message_id} for chat {chat_id}")
+            logger.info(f"Logged message {message_id} for chat {chat_id} with hash {content_hash}")
     except Exception as e:
         logger.error(f"Error logging message: {e}")
 

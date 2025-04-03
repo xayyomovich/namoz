@@ -9,57 +9,57 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def get_ramadan_countdown(now: datetime, times: dict, countdown: str) -> str:
-    """
-    Calculate the Ramadan countdown text (Saharlikgacha or Iftorlikgacha).
-
-    Args:
-        now (datetime): Current datetime.
-        times (dict): Prayer times dictionary containing 'prayer_times'.
-        countdown (str): Fallback countdown for non-Ramadan periods.
-
-    Returns:
-        str: Countdown text (e.g., "Saharlikgacha - 5:11 qoldi").
-    """
-    ramadan_start, ramadan_end = RAMADAN_DATES
-    in_ramadan = ramadan_start <= now <= ramadan_end
-    if not in_ramadan:
-        return f"Keyingi namozgacha - {countdown} qoldi"
-
-    bomdod_time = times['prayer_times'].get('Bomdod', 'N/A')
-    shom_time = times['prayer_times'].get('Shom', 'N/A')
-    if bomdod_time == 'N/A' or shom_time == 'N/A':
-        return "Saharlik yoki Iftorlik vaqti mavjud emas"
-
-    # Parse Bomdod and Shom times, adjusting for the correct day
-    bomdod_dt = datetime.strptime(bomdod_time, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
-    shom_dt = datetime.strptime(shom_time, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
-
-    # Adjust for midnight crossover
-    if bomdod_dt > shom_dt:  # Bomdod is typically early morning, Shom is evening
-        bomdod_dt -= timedelta(days=1)  # Bomdod is from the previous day
-    if now > shom_dt:  # If after Shom, Bomdod is for the next day
-        bomdod_dt += timedelta(days=1)
-    elif now < bomdod_dt:  # If before Bomdod, Shom was the previous day
-        shom_dt -= timedelta(days=1)
-
-    # Determine countdown based on current time
-    if now < bomdod_dt:  # Before Bomdod (e.g., 12:52 AM to 05:10 AM)
-        time_until_sahar = bomdod_dt - now
-        hours, remainder = divmod(time_until_sahar.seconds, 3600)
-        minutes, _ = divmod(remainder, 60)
-        return f"Saharlikkacha - {hours}:{minutes:02d} qoldi"
-    elif now < shom_dt:  # Between Bomdod and Shom (e.g., 05:10 AM to 18:37 PM)
-        time_until_iftar = shom_dt - now
-        hours, remainder = divmod(time_until_iftar.seconds, 3600)
-        minutes, _ = divmod(remainder, 60)
-        return f"Iftorlikkacha - {hours}:{minutes:02d} qoldi"
-    else:  # After Shom (e.g., 18:37 PM onwards)
-        next_bomdod_dt = bomdod_dt + timedelta(days=1)
-        time_until_sahar = next_bomdod_dt - now
-        hours, remainder = divmod(time_until_sahar.seconds, 3600)
-        minutes, _ = divmod(remainder, 60)
-        return f"Saharlikkacha - {hours}:{minutes:02d} qoldi"
+# def get_ramadan_countdown(now: datetime, times: dict, countdown: str) -> str:
+#     """
+#     Calculate the Ramadan countdown text (Saharlikgacha or Iftorlikgacha).
+#
+#     Args:
+#         now (datetime): Current datetime.
+#         times (dict): Prayer times dictionary containing 'prayer_times'.
+#         countdown (str): Fallback countdown for non-Ramadan periods.
+#
+#     Returns:
+#         str: Countdown text (e.g., "Saharlikgacha - 5:11 qoldi").
+#     """
+#     ramadan_start, ramadan_end = RAMADAN_DATES
+#     in_ramadan = ramadan_start <= now <= ramadan_end
+#     if not in_ramadan:
+#         return f"Keyingi namozgacha - {countdown} qoldi"
+#
+#     bomdod_time = times['prayer_times'].get('Bomdod', 'N/A')
+#     shom_time = times['prayer_times'].get('Shom', 'N/A')
+#     if bomdod_time == 'N/A' or shom_time == 'N/A':
+#         return "Saharlik yoki Iftorlik vaqti mavjud emas"
+#
+#     # Parse Bomdod and Shom times, adjusting for the correct day
+#     bomdod_dt = datetime.strptime(bomdod_time, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
+#     shom_dt = datetime.strptime(shom_time, "%H:%M").replace(year=now.year, month=now.month, day=now.day)
+#
+#     # Adjust for midnight crossover
+#     if bomdod_dt > shom_dt:  # Bomdod is typically early morning, Shom is evening
+#         bomdod_dt -= timedelta(days=1)  # Bomdod is from the previous day
+#     if now > shom_dt:  # If after Shom, Bomdod is for the next day
+#         bomdod_dt += timedelta(days=1)
+#     elif now < bomdod_dt:  # If before Bomdod, Shom was the previous day
+#         shom_dt -= timedelta(days=1)
+#
+#     # Determine countdown based on current time
+#     if now < bomdod_dt:  # Before Bomdod (e.g., 12:52 AM to 05:10 AM)
+#         time_until_sahar = bomdod_dt - now
+#         hours, remainder = divmod(time_until_sahar.seconds, 3600)
+#         minutes, _ = divmod(remainder, 60)
+#         return f"Saharlikkacha - {hours}:{minutes:02d} qoldi"
+#     elif now < shom_dt:  # Between Bomdod and Shom (e.g., 05:10 AM to 18:37 PM)
+#         time_until_iftar = shom_dt - now
+#         hours, remainder = divmod(time_until_iftar.seconds, 3600)
+#         minutes, _ = divmod(remainder, 60)
+#         return f"Iftorlikkacha - {hours}:{minutes:02d} qoldi"
+#     else:  # After Shom (e.g., 18:37 PM onwards)
+#         next_bomdod_dt = bomdod_dt + timedelta(days=1)
+#         time_until_sahar = next_bomdod_dt - now
+#         hours, remainder = divmod(time_until_sahar.seconds, 3600)
+#         minutes, _ = divmod(remainder, 60)
+#         return f"Saharlikkacha - {hours}:{minutes:02d} qoldi"
 
 
 async def calculate_countdown_message(day_type, next_prayer, next_prayer_time, closest_prayer, region, countdown,

@@ -4,6 +4,7 @@
     <file url="file://$PROJECT_DIR$/src/bot/bot.py" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/bot/handlers/callbacks.py" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/bot/utils/reminders.py" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/src/database/database.py" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/scraping/prayer_times.py" dialect="GenericSQL" />
   </component>
 </project>
