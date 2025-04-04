@@ -7,7 +7,7 @@ env/
 venv/
 .venv/
 *.log
-src/database/prayer_times.db  # Exclude the DB file, created at runtime
+database/prayer_times.db  # Exclude the DB file, created at runtime
 .env
 cache/
 .idea/
