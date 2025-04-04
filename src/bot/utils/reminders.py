@@ -7,7 +7,7 @@ import schedule
 import time
 import threading
 
-from src.database.database import compute_content_hash, get_message_hash
+from src.db.database import compute_content_hash, get_message_hash
 from src.bot.utils.calculations import calculate_islamic_date, calculate_countdown_message
 # from src.bot.handlers.commands import get_ramadan_countdown
 from src.config.settings import BOT_TOKEN, DATABASE_PATH
@@ -246,7 +246,7 @@ async def _update_message_task(chat_id):
                         (new_hash, chat_id, message_id)
                     )
                     await db.commit()
-                logger.info(f"Updated message {message_id} for chat {chat_id} with new hash {new_hash}")
+                # logger.info(f"Updated message {message_id} for chat {chat_id} with new hash {new_hash}")
 
         # Schedule the next update (every 10 minutes)
         await asyncio.sleep(600)
@@ -361,7 +361,7 @@ async def log_message(chat_id, message_id, message_type, text, reply_markup=None
                 (chat_id, message_id, message_type, datetime.now().isoformat(), content_hash)
             )
             await db.commit()
-            logger.info(f"Logged message {message_id} for chat {chat_id} with hash {content_hash}")
+            # logger.info(f"Logged message {message_id} for chat {chat_id} with hash {content_hash}")
     except Exception as e:
         logger.error(f"Error logging message: {e}")
 

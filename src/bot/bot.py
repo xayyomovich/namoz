@@ -35,7 +35,7 @@ async def on_startup(bot):
     - Starts the scheduler thread for reminders and periodic tasks.
     """
     logger.info('Bot starting...')
-    from src.database.database import initialize_database, migrate_db
+    from src.db.database import initialize_database, migrate_db
     await initialize_database()  # Ensure database is set up before proceeding.
     await migrate_db()
     await cache_monthly_prayer_times()

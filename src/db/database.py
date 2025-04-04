@@ -14,7 +14,7 @@ async def initialize_database():
     db_dir = os.path.dirname(DATABASE_PATH)
     os.makedirs(db_dir, exist_ok=True)  # Creates database directory if it doesn’t exist.
     from src.bot.bot import logger
-    logger.info(f"Database path: {DATABASE_PATH}")
+    # logger.info(f"Database path: {DATABASE_PATH}")
 
     async with aiosqlite.connect(DATABASE_PATH) as db:
         # Users table to store chat info
@@ -82,7 +82,6 @@ def compute_content_hash(text: str, reply_markup=None) -> str:
     # Combine text and markup, encode, and compute MD5 hash
     content = f"{text}{markup_str}".encode('utf-8')
     return hashlib.md5(content).hexdigest()
-# mijgona pittkalla, shabushin
 
 
 async def get_message_hash(chat_id, message_id) -> str:
