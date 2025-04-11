@@ -3,18 +3,13 @@ import asyncio
 from aiogram import Dispatcher, types, F
 from src.bot.keyboards.navigation import get_main_keyboard, get_settings_keyboard, get_location_keyboard
 from src.bot.utils.reminders import update_main_message, log_message, calculate_islamic_date
+from src.config.constants import PRAYER_EMOJIS
 from src.scraping.prayer_times import fetch_cached_prayer_times
 from src.config.settings import DATABASE_PATH
 from datetime import datetime, timedelta
 import aiosqlite
 import logging
 
-"""
-//--------WHEN RAMADAN COMES--------//
-from src.bot.utils.calculations import get_ramadan_countdown
-from aiogram.types import FSInputFile
-from src.config.ramadan_images import RAMADAN_IMAGES
-import os"""
 
 logger = logging.getLogger(__name__)
 
@@ -70,15 +65,6 @@ async def set_location_command(message: types.Message):
     """Handle /set_location to ask for user location via inline keyboard."""
     await message.answer("Iltimos, shahringizni tanlang", reply_markup=get_location_keyboard())
 
-
-PRAYER_EMOJIS = {
-    'Bomdod': '🌅',
-    'Quyosh': '☀️',
-    'Peshin': '🌞',
-    'Asr': '🌆',
-    'Shom': '🌙',
-    'Xufton': '⭐'
-}
 
 
 async def send_main_message(message, region=None, day_type='bugun'):
@@ -157,12 +143,6 @@ async def send_main_message(message, region=None, day_type='bugun'):
     # Calculate Islamic (Hijri) date from the Gregorian date
     islamic_date = await calculate_islamic_date(date_str)
 
-    # Use the new function for Ramadan countdown
-    # iftar_text = None
-    # if day_type == 'bugun':
-    #     now = datetime.now()
-    #     iftar_text = get_ramadan_countdown(now, times, countdown)
-
     # Start building the message with location, date, and Islamic date
     message_text = (
         f"📍 {times['location']}\n"
@@ -170,10 +150,6 @@ async def send_main_message(message, region=None, day_type='bugun'):
         f"☪️ {islamic_date}\n"
         f"------------------------\n"
     )
-    # if day_type == 'bugun':
-    #     # Add countdown text only for today
-    #     message_text += f"<code><b>{iftar_text}</b></code>\n"
-    # message_text += f"------------------------\n"
 
     # Add prayer times table with emojis, bold, and tick for 'bugun', or just list for 'erta'
     if day_type == 'bugun':
@@ -242,19 +218,8 @@ async def send_main_message(message, region=None, day_type='bugun'):
     # Send the formatted message with Markdown parsing for bold
     sent_message = await message.answer(message_text, parse_mode='HTML')
 
-    # Delete the previous message before sending the new one
-    from src.bot.bot import bot  # Ensure bot is imported
-    from src.bot.handlers.callbacks import delete_previous_message
-    # await delete_previous_message(bot, chat_id)
-
     # Log the message for future updates
-    await log_message(chat_id, sent_message.message_id, day_type, sent_message.text, sent_message.reply_markup)
-
-    # Update the last_message_id in user_state
-    # from src.bot.handlers.callbacks import user_state
-    # if chat_id not in user_state:
-    #     user_state[chat_id] = {}
-    # user_state[chat_id]['last_message_id'] = sent_message.message_id
+    await log_message(chat_id, sent_message.message_id, day_type)
 
     # Schedule automatic updates for this message
     await asyncio.create_task(
@@ -287,25 +252,6 @@ async def settings_handler(message: types.Message):
     # await settings_callback(message, reply_markup=get_settings_keyboard())
 
 
-# async def ramadan_calendar_handler(message: types.Message):
-#     """Handle 'Ramazon taqvimi' button press and display a Ramadan image from static files."""
-#     try:
-#         image_config = RAMADAN_IMAGES.get("default")
-#         if not image_config:
-#             await message.answer("Ramazon taqvimi uchun rasm topilmadi.")
-#             return
-#
-#         image_path = os.path.join("src/static/ramadan", image_config["filename"])
-#         if os.path.exists(image_path):
-#             photo = FSInputFile(image_path)  # Use FSInputFile instead of opening directly
-#             await message.answer_photo(photo, caption=image_config["description"])
-#         else:
-#             await message.answer("Rasm fayli topilmadi. Iltimos, rasmni tekshiring.")
-#     except Exception as e:
-#         logger.error(f"Error displaying Ramadan image: {e}")
-#         await message.answer("Xatolik yuz berdi, rasmni ko'rsatishda muammo bor.")
-
-
 def register_commands(dp: Dispatcher):
     """Register command handlers with the Dispatcher."""
     dp.message.register(start_command, F.text == "/start")
@@ -314,7 +260,6 @@ def register_commands(dp: Dispatcher):
     # Register button handlers
     dp.message.register(today_handler, F.text == "Bugun")
     dp.message.register(tomorrow_handler, F.text == "Ertaga")
-    # dp.message.register(ramadan_calendar_handler, F.text == "Ramazon taqvimi")
     dp.message.register(settings_handler, F.text == "Sozlamalar")
 
 

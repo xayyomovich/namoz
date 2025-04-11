@@ -6,52 +6,13 @@ from bs4 import BeautifulSoup
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from datetime import datetime, timedelta
 import aiosqlite
+
+from src.config.constants import UZBEK_WEEKDAYS, UZBEK_MONTHS, PRAYER_MAP
 from src.config.settings import DATABASE_PATH, REVERSE_LOCATION_MAP, LOCATION_MAP
 
 # Initialize logger (replacing print statements for production use where needed, but keeping your debug prints)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Constants from your original code
-UZBEK_WEEKDAYS = {
-    'Душанба': 'Dushanba',
-    'Сешанба': 'Seshanba',
-    'Чоршанба': 'Chorshanba',
-    'Пайшанба': 'Payshanba',
-    'Жума': 'Juma',
-    'Шанба': 'Shanba',
-    'Якшанба': 'Yakshanba'
-}
-
-UZBEK_MONTHS = {
-    'январь': 'Yanvar',
-    'февраль': 'Fevral',
-    'март': 'Mart',
-    'апрель': 'Aprel',
-    'май': 'May',
-    'июнь': 'Iyun',
-    'июль': 'Iyul',
-    'август': 'Avgust',
-    'сентябрь': 'Sentabr',
-    'октябрь': 'Oktabr',
-    'ноябрь': 'Noyabr',
-    'декабрь': 'Dekabr'
-}
-
-ISLAMIC_MONTHS = [
-    "Muharram", "Safar", "Rabiu-l Avval", "Rabius-Soni",
-    "Jumadul Avval", "Jumadis-Soni", "Rajab", "Sha'bon",
-    "Ramazon", "Shavvol", "Zulqada", "Zulhijja"
-]
-
-PRAYER_MAP = {
-    'Тонг(Саҳарлик)': 'Bomdod',
-    'Қуёш': 'Quyosh',
-    'Пешин': 'Peshin',
-    'Аср': 'Asr',
-    'Шом(Ифтор)': 'Shom',
-    'Хуфтон': 'Xufton'
-}
 
 
 ## Scrape prayer times from islom.uz (your original function, now enhanced for monthly scraping)
@@ -368,5 +329,7 @@ async def get_next_prayer(prayer_times, region, date_str):
         logger.info(f"No next prayer found for {region}, {date_str}")
         return "N/A", "N/A"
     return next_prayer, next_prayer_time
+
+
 
 

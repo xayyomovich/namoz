@@ -1,11 +1,11 @@
 import aiosqlite
 from aiogram import Dispatcher, types, F
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton
+from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from src.bot.keyboards.navigation import get_main_keyboard, get_location_keyboard, get_settings_keyboard
 from src.bot.utils.reminders import reminders, logger
-from src.config.settings import LOCATION_MAP, DATABASE_PATH, REVERSE_LOCATION_MAP
+from src.config.settings import DATABASE_PATH, REVERSE_LOCATION_MAP
 from src.bot.handlers.commands import send_main_message
 
 # Store user state (could also use a database)
