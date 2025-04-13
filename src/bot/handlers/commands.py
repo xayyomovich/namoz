@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 import aiosqlite
 import logging
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -64,7 +63,6 @@ async def save_user(chat_id, username):
 async def set_location_command(message: types.Message):
     """Handle /set_location to ask for user location via inline keyboard."""
     await message.answer("Iltimos, shahringizni tanlang", reply_markup=get_location_keyboard())
-
 
 
 async def send_main_message(message, region=None, day_type='bugun'):
@@ -261,8 +259,3 @@ def register_commands(dp: Dispatcher):
     dp.message.register(today_handler, F.text == "Bugun")
     dp.message.register(tomorrow_handler, F.text == "Ertaga")
     dp.message.register(settings_handler, F.text == "Sozlamalar")
-
-
-
-
-

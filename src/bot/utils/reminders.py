@@ -12,8 +12,6 @@ from src.config.constants import UZBEK_MONTHS_EN, PRAYER_EMOJIS
 from src.config.settings import BOT_TOKEN, DATABASE_PATH
 from src.scraping.prayer_times import fetch_cached_prayer_times, get_next_prayer, cache_monthly_prayer_times
 
-
-
 # Initialize logger
 # - Configures logging to capture info and errors with a detailed format.
 logging.basicConfig(level=logging.INFO)
@@ -26,7 +24,6 @@ bot = Bot(token=BOT_TOKEN)
 reminders = {}  # Stores reminder states for each chat_id and prayer
 reminders_triggered = {}
 message_cache = {}  # Caches the main message data for each chat_id
-
 
 
 async def update_main_message(chat_id, message_id, times, next_prayer, next_prayer_time, islamic_date):
@@ -70,96 +67,94 @@ async def _update_message_task(chat_id):
     last_date = data['last_date']
 
     try:
-        now = datetime.now()
-        current_time = now.strftime("%H:%M")
+        while True:  # Controlled loop with delay
+            now = datetime.now()
+            current_time = now.strftime("%H:%M")
 
-        # Check if it crossed midnight to fetch tomorrow's data
-        current_date = now.strftime("%Y-%m-%d")
-        expected_date = last_date.split(', ')[1].split('-')
+            # Check if it crossed midnight to fetch tomorrow's data
+            current_date = now.strftime("%Y-%m-%d")
+            expected_date = last_date.split(', ')[1].split('-')
+            month_num = UZBEK_MONTHS_EN[expected_date[1]]
+            try:
+                day = int(expected_date[0])
+                expected_date = f"{now.year}-{str(month_num).zfill(2)}-{str(day).zfill(2)}"
+            except ValueError as e:
+                logger.error(f"Invalid day format in expected_date: {expected_date[0]}. Error: {e}")
+                expected_date = f"{now.year}-{str(month_num).zfill(2)}-01"
 
-        month_num = UZBEK_MONTHS_EN[expected_date[1]]
-        try:
-            # Ensure expected_date[0] is a valid integer
-            day = int(expected_date[0])
-            expected_date = f"{now.year}-{str(month_num).zfill(2)}-{str(day).zfill(2)}"
-        except ValueError as e:
-            logger.error(f"Invalid day format in expected_date: {expected_date[0]}. Error: {e}")
-            expected_date = f"{now.year}-{str(month_num).zfill(2)}-01"
-
-        if current_date != expected_date:
-            tomorrow_date = now.strftime("%Y-%m-%d")
-            tomorrow_times = await fetch_cached_prayer_times(times['location'], tomorrow_date)
-            if tomorrow_times:
-                times = tomorrow_times
-                message_cache[chat_id]['times'] = times
-                message_cache[chat_id]['last_date'] = times['date']
-                next_prayer, next_prayer_time = await get_next_prayer(times, times['location'], tomorrow_date)
-                message_cache[chat_id]['next_prayer'] = next_prayer
-                message_cache[chat_id]['next_prayer_time'] = next_prayer_time
-                # Recalculate Islamic date for the new day
-                islamic_date = await calculate_islamic_date(tomorrow_date)
-                message_cache[chat_id]['islamic_date'] = islamic_date
-            else:
-                logger.error(f"No cached data for {tomorrow_date} for {times['location']}. Retrying in next cycle.")
-                # Schedule the next update (every 600 seconds = 10 minutes)
-                await asyncio.sleep(600)
-                await _update_message_task(chat_id)
-                return
-
-        if next_prayer_time <= current_time:
-            next_prayer, next_prayer_time = await get_next_prayer(times, times['location'], current_date)
-            message_cache[chat_id]['next_prayer'] = next_prayer
-            message_cache[chat_id]['next_prayer_time'] = next_prayer_time
-
-            if next_prayer == "N/A":
-                tomorrow_date = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+            if current_date != expected_date:
+                tomorrow_date = now.strftime("%Y-%m-%d")
                 tomorrow_times = await fetch_cached_prayer_times(times['location'], tomorrow_date)
                 if tomorrow_times:
-                    next_prayer, next_prayer_time = await get_next_prayer(tomorrow_times, times['location'],
-                                                                          tomorrow_date)
                     times = tomorrow_times
                     message_cache[chat_id]['times'] = times
+                    message_cache[chat_id]['last_date'] = times['date']
+                    next_prayer, next_prayer_time = await get_next_prayer(times, times['location'], tomorrow_date)
                     message_cache[chat_id]['next_prayer'] = next_prayer
                     message_cache[chat_id]['next_prayer_time'] = next_prayer_time
-                    message_cache[chat_id]['last_date'] = times['date']
-                    # Recalculate Islamic date for the new day
                     islamic_date = await calculate_islamic_date(tomorrow_date)
                     message_cache[chat_id]['islamic_date'] = islamic_date
                 else:
-                    logger.error(f"No cached data for tomorrow ({tomorrow_date}) for {times['location']}")
-                    next_prayer = "N/A"
-                    next_prayer_time = "N/A"
-                    message_cache[chat_id]['next_prayer'] = next_prayer
-                    message_cache[chat_id]['next_prayer_time'] = next_prayer_time
+                    logger.error(f"No cached data for {tomorrow_date} for {times['location']}")
+                    await asyncio.sleep(600)
+                    continue
 
-        # Calculate countdown to next prayer
-        countdown = "N/A"
-        reminder_triggered = False
-        if next_prayer != "N/A" and next_prayer_time != "N/A":
-            next_time = datetime.strptime(next_prayer_time, "%H:%M")
-            next_time = now.replace(hour=next_time.hour, minute=next_time.minute, second=0, microsecond=0)
-            if next_time < now:
-                next_time += timedelta(days=1)
-            time_until = next_time - now
-            total_seconds_until = time_until.total_seconds()
-            hours, remainder = divmod(time_until.seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            countdown = f"{hours}:{int(minutes):02d}"
+            if next_prayer_time <= current_time:
+                next_prayer, next_prayer_time = await get_next_prayer(times, times['location'], current_date)
+                message_cache[chat_id]['next_prayer'] = next_prayer
+                message_cache[chat_id]['next_prayer_time'] = next_prayer_time
 
-            # Trigger reminder 5 minutes before the prayer
-            reminder_enabled = chat_id not in reminders.get(next_prayer, {})
-            has_triggered = reminders_triggered.get(chat_id, {}).get(next_prayer) == current_date
-            if 240 <= total_seconds_until <= 600 and reminder_enabled and not has_triggered:
-                reminder_triggered = True
-                reminders_triggered.setdefault(chat_id, {})[next_prayer] = current_date
-                new_message = await send_new_main_message(chat_id, times, current_time, islamic_date, next_prayer,
-                                                          next_prayer_time, countdown)
-                try:
-                    await bot.delete_message(chat_id, message_id)
-                except Exception as e:
-                    logger.error(f"Error deleting message {message_id} for chat {chat_id}: {e}")
-                message_cache[chat_id]['message_id'] = new_message.message_id
-                message_id = new_message.message_id
+                if next_prayer == "N/A":
+                    tomorrow_date = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+                    tomorrow_times = await fetch_cached_prayer_times(times['location'], tomorrow_date)
+                    if tomorrow_times:
+                        next_prayer, next_prayer_time = await get_next_prayer(tomorrow_times, times['location'],
+                                                                              tomorrow_date)
+                        times = tomorrow_times
+                        message_cache[chat_id]['times'] = times
+                        message_cache[chat_id]['next_prayer'] = next_prayer
+                        message_cache[chat_id]['next_prayer_time'] = next_prayer_time
+                        message_cache[chat_id]['last_date'] = times['date']
+                        islamic_date = await calculate_islamic_date(tomorrow_date)
+                        message_cache[chat_id]['islamic_date'] = islamic_date
+                    else:
+                        logger.error(f"No cached data for tomorrow ({tomorrow_date}) for {times['location']}")
+                        next_prayer = "N/A"
+                        next_prayer_time = "N/A"
+                        message_cache[chat_id]['next_prayer'] = next_prayer
+                        message_cache[chat_id]['next_prayer_time'] = next_prayer_time
+
+            # Calculate countdown to next prayer
+            countdown = "N/A"
+            reminder_triggered = False
+            if next_prayer != "N/A" and next_prayer_time != "N/A":
+                next_time = datetime.strptime(next_prayer_time, "%H:%M")
+                next_time = now.replace(hour=next_time.hour, minute=next_time.minute, second=0, microsecond=0)
+                if next_time < now:
+                    next_time += timedelta(days=1)
+                time_until = next_time - now
+                total_seconds_until = time_until.total_seconds()
+                hours, remainder = divmod(time_until.seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                countdown = f"{hours}:{int(minutes):02d}"
+
+                # Trigger reminder 5 minutes before the prayer
+                reminder_enabled = chat_id not in reminders.get(next_prayer, {})
+                has_triggered = reminders_triggered.get(chat_id, {}).get(next_prayer) == current_date
+                if 240 <= total_seconds_until <= 600 and reminder_enabled and not has_triggered:
+                    reminder_triggered = True
+                    reminders_triggered.setdefault(chat_id, {})[next_prayer] = current_date
+                    new_message = await send_new_main_message(chat_id, times, current_time, islamic_date, next_prayer,
+                                                              next_prayer_time, countdown)
+                    try:
+                        await bot.delete_message(chat_id, message_id)
+                    except Exception as e:
+                        logger.error(f"Error deleting message {message_id} for chat {chat_id}: {e}")
+                    message_cache[chat_id]['message_id'] = new_message.message_id
+                    message_id = new_message.message_id
+
+            # No countdown edit unless reminder triggered
+            await asyncio.sleep(120)
 
         # Find the closest prayer time for highlighting
         closest_prayer = None
@@ -197,20 +192,11 @@ async def _update_message_task(chat_id):
         for prayer, time_str in times['prayer_times'].items():
             emoji = PRAYER_EMOJIS.get(prayer, '⏰')
             if prayer == closest_prayer:
-                message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b></blockquote>\n"
+                message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b>           </blockquote>\n"
             else:
                 message_text += f"{emoji} {prayer}: {time_str}\n"
         message_text += f"------------------------\n"
         message_text += countdown_message
-
-        # Update the message if no reminder was triggered
-        if not reminder_triggered:
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=message_text,
-                parse_mode='HTML'
-            )
 
         await _update_message_task(chat_id)
 
@@ -237,8 +223,6 @@ async def send_new_main_message(chat_id, times, current_time, islamic_date, next
     global closest_prayer
 
     now = datetime.now()
-    # iftar_text = get_ramadan_countdown(now, times, countdown)
-
     # Find the closest prayer for highlighting
     closest_prayer = None
     min_time_diff = None
@@ -263,7 +247,6 @@ async def send_new_main_message(chat_id, times, current_time, islamic_date, next
         now=now
     )
 
-
     # Build the message text
     message_text = (
         f"📍 {times['location']}\n"
@@ -274,7 +257,7 @@ async def send_new_main_message(chat_id, times, current_time, islamic_date, next
     for prayer, time_str in times['prayer_times'].items():
         emoji = PRAYER_EMOJIS.get(prayer, '⏰')
         if prayer == closest_prayer:
-            message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b></blockquote>\n"
+            message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b>         </blockquote>\n"
         else:
             message_text += f"{emoji} {prayer}: {time_str}\n"
     message_text += f"------------------------\n"
@@ -314,24 +297,9 @@ async def log_message(chat_id, message_id, message_type):
         async with aiosqlite.connect(DATABASE_PATH, timeout=10) as db:
             await db.execute(
                 'INSERT INTO message_log (chat_id, message_id, type, created_at) VALUES (?, ?, ?, ?)',
-                 (chat_id, message_id, message_type, datetime.now().isoformat())
+                (chat_id, message_id, message_type, datetime.now().isoformat())
             )
             await db.commit()
             # logger.info(f"Logged message {message_id} for chat {chat_id}")
     except Exception as e:
         logger.error(f"Error logging message: {e}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
