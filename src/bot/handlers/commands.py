@@ -69,7 +69,6 @@ async def save_user(chat_id, username):
 async def send_main_message(message, region=None, day_type='bugun'):
     print("=-=-=-=-=-=-=-=-=-=-=-=send_main_message-=-=-=-=-=-=-=-=-=-=-=-=-=-=")
     """Send or update the main message with prayer times."""
-    # global closest_prayer
     chat_id = message.chat.id
 
     # Check if region is provided; if not, fetch it from the database

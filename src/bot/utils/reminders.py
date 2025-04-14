@@ -90,9 +90,6 @@ async def _update_message_task(chat_id):
                     times = tomorrow_times
                     message_cache[chat_id]['times'] = times
                     message_cache[chat_id]['last_date'] = times['date']
-                    # next_prayer, next_prayer_time = await get_next_prayer(times, times['location'], tomorrow_date)
-                    # message_cache[chat_id]['next_prayer'] = next_prayer
-                    # message_cache[chat_id]['next_prayer_time'] = next_prayer_time
                     islamic_date = await calculate_islamic_date(tomorrow_date)
                     message_cache[chat_id]['islamic_date'] = islamic_date
                 else:
