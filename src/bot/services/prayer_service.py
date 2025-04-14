@@ -8,6 +8,20 @@
 #
 # async def get_prayer_message(chat_id: int, region: str | None, day_type: str = "bugun") -> tuple[str, str, str, str]:
 #     # Start building the message with location, date, and Islamic date
+#     # Find the closest prayer time for highlighting
+#     closest_prayer = None
+#     min_time_diff = None
+#     for prayer, time_str in times['prayer_times'].items():
+#         if time_str != 'N/A':
+#             prayer_minutes = int(time_str.split(':')[0]) * 60 + int(time_str.split(':')[1])
+#             current_minutes = int(current_time.split(':')[0]) * 60 + int(current_time.split(':')[1])
+#             time_diff = prayer_minutes - current_minutes
+#             if (min_time_diff is None or
+#                     (time_diff <= 0 and (min_time_diff > 0 or time_diff > min_time_diff)) or
+#                     (time_diff > 0 and time_diff < min_time_diff)):
+#                 closest_prayer = prayer
+#                 min_time_diff = time_diff
+#
 #     message_text = (
 #         f"📍 {times['location']}\n"
 #         f"🗓 {times['date']}\n"

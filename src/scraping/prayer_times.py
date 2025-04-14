@@ -4,7 +4,7 @@ import logging
 import asyncio
 from bs4 import BeautifulSoup
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from datetime import datetime, timedelta
+from datetime import datetime
 import aiosqlite
 
 from src.config.constants import UZBEK_WEEKDAYS, UZBEK_MONTHS, PRAYER_MAP
@@ -94,8 +94,12 @@ async def scrape_prayer_times(region, month=None, day_type='bugun'):
                         city = REVERSE_LOCATION_MAP.get(region, 'Noma\'lum shahar')
 
                         # Calculate next prayer and time (using current time for consistency)
+                        from src.bot.utils.calculations import calculate_next_prayer_countdown
                         date_str = f"{datetime.now().year}-{month:02d}-{int(day_number):02d}"
-                        next_prayer, next_prayer_time = await get_next_prayer({'prayer_times': prayer_times}, region, date_str)
+                        current_time = datetime.now().strftime("%H:%M")
+                        countdown_message, next_prayer, next_prayer_time, countdown = await calculate_next_prayer_countdown(
+                            prayer_times, region, current_time, date_str
+                        )
 
                         monthly_data[day_number] = {
                             'location': city,
@@ -160,8 +164,12 @@ async def scrape_prayer_times(region, month=None, day_type='bugun'):
                     city = REVERSE_LOCATION_MAP.get(region, 'Noma\'lum shahar')
 
                     # Calculate next prayer and time
+                    from src.bot.utils.calculations import calculate_next_prayer_countdown
+                    current_time = datetime.now().strftime("%H:%M")
                     date_str = f"{datetime.now().year}-{month:02d}-{int(day_number):02d}"
-                    next_prayer, next_prayer_time = await get_next_prayer({'prayer_times': prayer_times}, region, date_str)
+                    countdown_message, next_prayer, next_prayer_time, countdown = await calculate_next_prayer_countdown(
+                        prayer_times, region, current_time, date_str
+                    )
 
                     return {
                         'location': city,
@@ -290,46 +298,6 @@ async def cache_monthly_prayer_times():
                 logger.error(f"Max retries ({max_retries}) reached. Failed to scrape the following regions: {[name for name, _ in regions_to_scrape]}")
         else:
             logger.info("Successfully cached prayer times for all regions!")
-
-
-## Get next prayer (unchanged, but updated to use logger)
-async def get_next_prayer(prayer_times, region, date_str):
-    """
-    Determine the next prayer time.
-    Args:
-        prayer_times (dict): Current day’s prayer times.
-        region (str): Region code.
-        date_str (str): Current date.
-    Returns:
-        tuple: (next_prayer, next_prayer_time) or ('N/A', 'N/A').
-    Example:
-        ('Peshin', '12:35') or ('N/A', 'N/A')
-    """
-    current_time = datetime.now().strftime("%H:%M")
-    next_prayer = None
-    next_prayer_time = None
-
-    for prayer, time_str in prayer_times['prayer_times'].items():
-        if time_str != 'N/A' and time_str > current_time:
-            if next_prayer is None or time_str < next_prayer_time:
-                next_prayer = prayer
-                next_prayer_time = time_str
-
-    if next_prayer is None:
-        tomorrow_date = (datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-        tomorrow_times = await fetch_cached_prayer_times(region, tomorrow_date)
-        if tomorrow_times:
-            for prayer, time_str in sorted(tomorrow_times['prayer_times'].items(), key=lambda x: x[1]):
-                if time_str != 'N/A':
-                    next_prayer = prayer
-                    next_prayer_time = time_str
-                    break
-
-    if next_prayer is None or next_prayer_time is None:
-        logger.info(f"No next prayer found for {region}, {date_str}")
-        return "N/A", "N/A"
-    return next_prayer, next_prayer_time
-
 
 
 

@@ -10,72 +10,116 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def calculate_countdown_message(day_type, next_prayer, next_prayer_time, closest_prayer, region, countdown,
-                                      now=None):
+async def calculate_exact_prayer(prayer_times: dict, current_time: str) -> str | None:
     """
-    Calculate the countdown message for the next prayer, handling both today's prayers and tomorrow's Bomdod after Xufton.
+    Find the exact prayer closest to the current time for highlighting.
 
     Args:
-        day_type (str): 'bugun' or 'erta'.
-        next_prayer (str): Name of the next prayer.
-        next_prayer_time (str): Time of the next prayer in "HH:MM" format.
-        closest_prayer (str): The closest prayer to the current time.
-        region (str): The region for fetching prayer times.
-        countdown (str): Pre-calculated countdown for today's prayer.
-        now (datetime, optional): Current time for testing; defaults to datetime.now().
+        prayer_times: Dict of prayer names to times (e.g., {"Bomdod": "04:24", ...}).
+        current_time: Current time in "HH:MM" format.
 
     Returns:
-        tuple: (message_text, updated_next_prayer, updated_next_prayer_time, updated_countdown)
-            - message_text: The formatted countdown message to append (or empty string if not applicable).
-            - updated_next_prayer: Updated next prayer (e.g., "Bomdod" if Xufton has passed).
-            - updated_next_prayer_time: Updated next prayer time.
-            - updated_countdown: Updated countdown value.
+        Name of the exact prayer (e.g., "Peshin") or None if no valid times.
     """
-    if now is None:
-        now = datetime.now()
+    exact_prayer = None
+    min_time_diff = None
 
-    message_text = ""
-    updated_next_prayer = next_prayer
-    updated_next_prayer_time = next_prayer_time
-    updated_countdown = countdown
+    for prayer, time_str in prayer_times.items():
+        if time_str != "N/A":
+            try:
+                prayer_minutes = int(time_str.split(':')[0]) * 60 + int(time_str.split(':')[1])
+                current_minutes = int(current_time.split(':')[0]) * 60 + int(current_time.split(':')[1])
+                time_diff = prayer_minutes - current_minutes
+                if min_time_diff is None or abs(time_diff) < abs(min_time_diff):
+                    exact_prayer = prayer
+                    min_time_diff = time_diff
+                    # print(f"-=-=-=-=--=-=-=-=-=-min_time_diff=-=-=-=-=-=-=-=-=-={min_time_diff}")
+            except ValueError as e:
+                logger.error(f"Error parsing time {time_str} for {prayer}: {e}")
+                continue
 
-    if day_type == 'bugun' and updated_next_prayer and updated_next_prayer_time != 'N/A':
-        message_text = (
-            f"<code><b>{updated_next_prayer}</b> gacha <b>-{updated_countdown}</b> qoldi </code>"
-        )
-    elif day_type == 'bugun' and closest_prayer == "Xufton" and (
-            not updated_next_prayer or updated_next_prayer_time == 'N/A'):
-        # All prayers for today have passed; calculate countdown to tomorrow's Bomdod
-        tomorrow_date = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+    return exact_prayer
+
+
+async def calculate_next_prayer_countdown(prayer_times: dict, region: str, current_time: str, date_str: str) -> tuple[
+    str, str, str, str]:
+    """
+    Calculate the next prayer and countdown message, including post-Xufton Bomdod.
+
+    Args:
+        prayer_times: Dict of prayer names to times (e.g., {"Bomdod": "04:24", ...}).
+        region: Region code for fetching tomorrow's times.
+        current_time: Current time in "HH:MM" format.
+        date_str: Current date in "YYYY-MM-DD" format.
+
+    Returns:
+        Tuple: (countdown_message, next_prayer, next_prayer_time, countdown)
+        - countdown_message: Formatted string like "<code><b>Peshin</b> gacha <b>-02:15</b> qoldi</code>".
+        - next_prayer: Name of next prayer (e.g., "Peshin").
+        - next_prayer_time: Time of next prayer (e.g., "12:24").
+        - countdown: Countdown string (e.g., "02:15").
+    """
+    next_prayer = None
+    next_prayer_time = None
+    countdown = "N/A"
+    countdown_message = ""
+
+    # Find next prayer for today
+    for prayer, time_str in prayer_times.items():
+        if time_str != "N/A" and time_str > current_time:
+            if next_prayer is None or time_str < next_prayer_time:
+                next_prayer = prayer
+                next_prayer_time = time_str
+
+    # Calculate countdown
+    if next_prayer and next_prayer_time != "N/A":
+        try:
+            now = datetime.now()
+            next_time = datetime.strptime(next_prayer_time, "%H:%M")
+            next_time = now.replace(hour=next_time.hour, minute=next_time.minute, second=0, microsecond=0)
+            if next_time < now:
+                next_time += timedelta(days=1)
+            time_until = next_time - now
+            hours, remainder = divmod(time_until.seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            countdown = f"{hours}:{minutes:02d}"
+            countdown_message = f"<code><b>{next_prayer}</b> gacha <b>-{countdown}</b> qoldi</code>"
+            """
+            "<code><b>Peshin</b> gacha <b>-00:02</b> qoldi</code>",
+                "Peshin",
+                "12:24",
+                "00:02"
+            """
+        except Exception as e:
+            logger.error(f"Error calculating countdown for {next_prayer}: {e}")
+            countdown = "N/A"
+            countdown_message = ""
+
+    # Handle post-Xufton (no next prayer today)
+    if not next_prayer:
+        tomorrow_date = (datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
         tomorrow_times = await fetch_cached_prayer_times(region, tomorrow_date)
-        if tomorrow_times:
-            bomdod_time = tomorrow_times['prayer_times'].get('Bomdod', 'N/A')
-            if bomdod_time != 'N/A':
+        if tomorrow_times and tomorrow_times.get("prayer_times"):
+            bomdod_time = tomorrow_times['prayer_times'].get("Bomdod", "N/A")
+            if bomdod_time != "N/A":
+                next_prayer = "Bomdod"
+                next_prayer_time = bomdod_time
                 try:
+                    now = datetime.now()
                     next_time = datetime.strptime(bomdod_time, "%H:%M")
-                    next_time = now.replace(
-                        hour=next_time.hour,
-                        minute=next_time.minute,
-                        second=0,
-                        microsecond=0
-                    ) + timedelta(days=1)  # Set to tomorrow
+                    next_time = now.replace(hour=next_time.hour, minute=next_time.minute, second=0,
+                                            microsecond=0) + timedelta(days=1)
                     time_until = next_time - now
                     hours, remainder = divmod(time_until.seconds, 3600)
                     minutes, seconds = divmod(remainder, 60)
-                    updated_countdown = f"{hours}:{minutes:02d}"
-                    updated_next_prayer = "Bomdod"
-                    updated_next_prayer_time = bomdod_time
-                    message_text = (
-                        f"Ertangi Bomdod gacha\n"
-                        f"<code>-{updated_countdown} ⏰ qoldi</code>"
-                    )
+                    countdown = f"{hours}:{minutes:02d}"
+                    countdown_message = f"<code>Bomdod gacha -{countdown} qoldi</code>"
                 except Exception as e:
-                    logger.error(f"Error calculating countdown to tomorrow's Bomdod: {str(e)}")
-                    updated_next_prayer = "N/A"
-                    updated_next_prayer_time = "N/A"
-                    updated_countdown = "N/A"
+                    logger.error(f"Error calculating countdown to Bomdod: {e}")
+                    countdown = "N/A"
+                    countdown_message = ""
 
-    return message_text, updated_next_prayer, updated_next_prayer_time, updated_countdown
+    return countdown_message, next_prayer or "N/A", next_prayer_time or "N/A", countdown
 
 
 async def calculate_islamic_date(date_str):

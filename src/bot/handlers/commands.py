@@ -2,6 +2,7 @@ import asyncio
 
 from aiogram import Dispatcher, types, F
 from src.bot.keyboards.navigation import get_main_keyboard, get_settings_keyboard, get_location_keyboard
+from src.bot.utils.calculations import calculate_exact_prayer, calculate_next_prayer_countdown
 from src.bot.utils.reminders import update_main_message, log_message, calculate_islamic_date
 from src.config.constants import PRAYER_EMOJIS
 from src.scraping.prayer_times import fetch_cached_prayer_times
@@ -41,6 +42,11 @@ async def start_command(message: types.Message):
         await send_main_message(message, region[0])
 
 
+async def set_location_command(message: types.Message):
+    """Handle /set_location to ask for user location via inline keyboard."""
+    await message.answer("Iltimos, shahringizni tanlang", reply_markup=get_location_keyboard())
+
+
 async def save_user(chat_id, username):
     """Save user to database."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
@@ -60,14 +66,10 @@ async def save_user(chat_id, username):
         await db.commit()
 
 
-async def set_location_command(message: types.Message):
-    """Handle /set_location to ask for user location via inline keyboard."""
-    await message.answer("Iltimos, shahringizni tanlang", reply_markup=get_location_keyboard())
-
-
 async def send_main_message(message, region=None, day_type='bugun'):
+    print("=-=-=-=-=-=-=-=-=-=-=-=send_main_message-=-=-=-=-=-=-=-=-=-=-=-=-=-=")
     """Send or update the main message with prayer times."""
-    global closest_prayer
+    # global closest_prayer
     chat_id = message.chat.id
 
     # Check if region is provided; if not, fetch it from the database
@@ -95,48 +97,6 @@ async def send_main_message(message, region=None, day_type='bugun'):
 
     # Get current time for comparison with prayer times
     current_time = datetime.now().strftime("%H:%M")
-    next_prayer = None
-    next_prayer_time = None
-
-    # Find the next prayer time from today's data
-    for prayer, time_str in times['prayer_times'].items():  # Access nested prayer_times from cached data
-        if time_str != 'N/A' and time_str > current_time:
-            if next_prayer is None or time_str < next_prayer_time:
-                next_prayer = prayer
-                next_prayer_time = time_str
-
-    # If all prayers for today have passed, get tomorrow's first prayer from cache
-    if next_prayer is None:
-        tomorrow_date = (today + timedelta(days=1)).strftime("%Y-%m-%d")
-        tomorrow_times = await fetch_cached_prayer_times(region, tomorrow_date)
-        if tomorrow_times:
-            for prayer, time_str in sorted(tomorrow_times['prayer_times'].items(),
-                                           key=lambda x: x[1]):  # Sort to get earliest
-                if time_str != 'N/A':
-                    next_prayer = prayer
-                    next_prayer_time = time_str
-                    break
-
-    # Calculate time until next prayer (countdown) for 'bugun' only
-    countdown = "N/A"
-    if day_type == 'bugun' and next_prayer and next_prayer_time != 'N/A':
-        try:
-            next_time = datetime.strptime(next_prayer_time, "%H:%M")
-            next_time = datetime.now().replace(
-                hour=next_time.hour,
-                minute=next_time.minute,
-                second=0,
-                microsecond=0
-            )
-            if next_time < datetime.now():
-                # Adjust to tomorrow if next prayer time has passed today
-                next_time += timedelta(days=1)
-            time_until = next_time - datetime.now()
-            hours, remainder = divmod(time_until.seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            countdown = f"{hours}:{minutes:02d}"
-        except Exception as e:
-            logger.error(f"Error calculating countdown: {str(e)}")
 
     # Calculate Islamic (Hijri) date from the Gregorian date
     islamic_date = await calculate_islamic_date(date_str)
@@ -151,26 +111,15 @@ async def send_main_message(message, region=None, day_type='bugun'):
 
     # Add prayer times table with emojis, bold, and tick for 'bugun', or just list for 'erta'
     if day_type == 'bugun':
-        # Find the closest (exact) prayer time to now
-        closest_prayer = None
-        min_time_diff = None
-        for prayer, time_str in times['prayer_times'].items():
-            if time_str != 'N/A':
-                prayer_minutes = int(time_str.split(':')[0]) * 60 + int(time_str.split(':')[1])
-                current_minutes = int(current_time.split(':')[0]) * 60 + int(current_time.split(':')[1])
-                time_diff = prayer_minutes - current_minutes
-                if (min_time_diff is None or
-                        (time_diff <= 0 and (min_time_diff > 0 or time_diff > min_time_diff)) or
-                        (time_diff > 0 and time_diff < min_time_diff)):
-                    closest_prayer = prayer
-                    min_time_diff = time_diff
+        # Find the exact prayer time to now
+        exact_prayer = await calculate_exact_prayer(times['prayer_times'], current_time)
 
         # Build prayer list with emojis, bolding exact time, and adding tick
         for prayer, time_str in times['prayer_times'].items():
             emoji = PRAYER_EMOJIS.get(prayer, '⏰')
-            if prayer == closest_prayer:
+            if prayer == exact_prayer:
                 # Use blockquote with bold for the closest prayer
-                message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b></blockquote>\n"
+                message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b>      </blockquote>\n"
             else:
                 # Regular formatting for other prayers
                 message_text += f"{emoji} {prayer}: {time_str}\n"
@@ -182,36 +131,13 @@ async def send_main_message(message, region=None, day_type='bugun'):
 
     message_text += f"------------------------\n"
 
-    # Add next prayer countdown only for 'bugun'
-    if day_type == 'bugun' and next_prayer and next_prayer_time != 'N/A':
-        message_text += (
-            f"<code><b>{next_prayer}</b> gacha <b>-{countdown}</b> qoldi</code>"
+    next_prayer = "N/A"
+    next_prayer_time = "N/A"
+    if day_type == 'bugun':
+        countdown_message, next_prayer, next_prayer_time, countdown = await calculate_next_prayer_countdown(
+            times['prayer_times'], region, current_time, date_str
         )
-    elif day_type == 'bugun' and closest_prayer == "Xufton" and (not next_prayer or next_prayer_time == 'N/A'):
-        # All prayers for today have passed (Xufton is the closest and no next prayer)
-        tomorrow_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        tomorrow_times = await fetch_cached_prayer_times(region, tomorrow_date)
-        if tomorrow_times:
-            # Get Bomdod time for tomorrow
-            bomdod_time = tomorrow_times['prayer_times'].get('Bomdod', 'N/A')
-            if bomdod_time != 'N/A':
-                try:
-                    next_time = datetime.strptime(bomdod_time, "%H:%M")
-                    next_time = datetime.now().replace(
-                        hour=next_time.hour,
-                        minute=next_time.minute,
-                        second=0,
-                        microsecond=0
-                    ) + timedelta(days=1)  # Set to tomorrow
-                    time_until = next_time - datetime.now()
-                    hours, remainder = divmod(time_until.seconds, 3600)
-                    minutes, seconds = divmod(remainder, 60)
-                    countdown = f"{hours}:{minutes:02d}"
-                    message_text += (
-                        f"<code>Bomdod gacha-{countdown} qoldi</code>"
-                    )
-                except Exception as e:
-                    logger.error(f"Error calculating countdown to tomorrow's Bomdod: {str(e)}")
+        message_text += countdown_message
 
     # Send the formatted message with Markdown parsing for bold
     sent_message = await message.answer(message_text, parse_mode='HTML')
@@ -219,18 +145,18 @@ async def send_main_message(message, region=None, day_type='bugun'):
     # Log the message for future updates
     await log_message(chat_id, sent_message.message_id, day_type)
 
-    # Schedule automatic updates for this message
-    await asyncio.create_task(
-        update_main_message(
-            chat_id,
-            sent_message.message_id,
-            times,
-            next_prayer or "N/A",
-            next_prayer_time or "N/A",
-            islamic_date
-
+    # Schedule automatic updates for 'bugun' only
+    if day_type == 'bugun':
+        await asyncio.create_task(
+            update_main_message(
+                chat_id,
+                sent_message.message_id,
+                times,
+                next_prayer,
+                next_prayer_time,
+                islamic_date
+            )
         )
-    )
     return sent_message
 
 
@@ -254,8 +180,24 @@ def register_commands(dp: Dispatcher):
     """Register command handlers with the Dispatcher."""
     dp.message.register(start_command, F.text == "/start")
     dp.message.register(set_location_command, F.text == "/set_location")
-
     # Register button handlers
     dp.message.register(today_handler, F.text == "Bugun")
     dp.message.register(tomorrow_handler, F.text == "Ertaga")
     dp.message.register(settings_handler, F.text == "Sozlamalar")
+
+
+
+"""
+times = {
+    'location': 'Toshkent',
+    'date': 'Yakshanba, 13-Aprel',
+    'prayer_times': {
+        'Bomdod': '04:24',
+        'Quyosh': '05:47',
+        'Peshin': '12:24',
+        'Asr': '17:05',
+        'Shom': '19:04',
+        'Xufton': '20:24'
+    }
+}
+"""
