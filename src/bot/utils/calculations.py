@@ -1,13 +1,9 @@
 from datetime import datetime, timedelta
 from hijri_converter import Gregorian
-
-import logging
+from src.config.log_config import logger
 
 from src.config.constants import ISLAMIC_MONTHS
 from src.scraping.prayer_times import fetch_cached_prayer_times
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 async def calculate_exact_prayer(prayer_times: dict, current_time: str) -> str | None:

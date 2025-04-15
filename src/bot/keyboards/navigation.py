@@ -9,7 +9,7 @@ def get_main_keyboard():
     builder = ReplyKeyboardBuilder()
     builder.row(types.KeyboardButton(text="Bugun"), types.KeyboardButton(text="Ertaga"))
     # builder.row(types.KeyboardButton(text="Ramazon taqvimi"), types.KeyboardButton(text="Sozlamalar"))
-    builder.row(types.KeyboardButton(text="Sozlamalar"))
+    builder.row(types.KeyboardButton(text="⚙️ Sozlamalar"))
     markup = builder.as_markup(resize_keyboard=True)
     return markup
 
@@ -17,8 +17,8 @@ def get_main_keyboard():
 def get_settings_keyboard():
     """Build settings submenu with reply buttons."""
     builder = ReplyKeyboardBuilder()
-    builder.row(types.KeyboardButton(text="Oldindan eslatish"), types.KeyboardButton(text="Joylashuvni o'zgartirish"))
-    builder.row(types.KeyboardButton(text="Orqaga"))
+    builder.row(types.KeyboardButton(text="🔔🔕Oldindan eslatish"), types.KeyboardButton(text="📍 Manzilni o'zgartirish"))
+    builder.row(types.KeyboardButton(text="⬅️ Orqaga"))
     return builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
 
 

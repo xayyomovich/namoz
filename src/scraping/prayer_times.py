@@ -1,18 +1,14 @@
 import json
 import aiohttp
-import logging
 import asyncio
 from bs4 import BeautifulSoup
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from datetime import datetime
-import aiosqlite
+from src.config.log_config import logger
 
 from src.config.constants import UZBEK_WEEKDAYS, UZBEK_MONTHS, PRAYER_MAP
-from src.config.settings import DATABASE_PATH, REVERSE_LOCATION_MAP, LOCATION_MAP
-
-# Initialize logger (replacing print statements for production use where needed, but keeping your debug prints)
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from src.config.settings import REVERSE_LOCATION_MAP, LOCATION_MAP
+from src.db.pooling import facke_pooling
 
 
 ## Scrape prayer times from islom.uz (your original function, now enhanced for monthly scraping)
@@ -208,15 +204,14 @@ async def fetch_cached_prayer_times(region, date_str):
         {'location': 'Toshkent', 'date': 'Dushanba, 1-Mart', 'prayer_times': {'Bomdod (Saharlik)': '05:39', ...}, 'day_type': 'month', 'next_prayer': 'Peshin', 'next_prayer_time': '12:35'}
     """
     try:
-        async with aiosqlite.connect(DATABASE_PATH, timeout=10) as db:  ## Added timeout to prevent 'database locked'
-            cursor = await db.execute(
-                'SELECT times FROM prayer_times WHERE region = ? AND date = ?',
+        # async with aiosqlite.connect(DATABASE_PATH, timeout=10) as db:  ## Added timeout to prevent 'database locked'
+        result = await facke_pooling.fetchone(
+            'SELECT times FROM prayer_times WHERE region = ? AND date = ?',
                 (region, date_str)
             )
-            result = await cursor.fetchone()
-            if result:
-                return json.loads(result[0])  ## Returns full dict as stored
-            return None
+        if result:
+            return json.loads(result[0])  ## Returns full dict as stored
+        return None
     except Exception as e:
         logger.error(f"Error fetching cached prayer times for {region}, {date_str}: {e}")
         return None
@@ -235,21 +230,21 @@ async def save_monthly_prayer_times(region, month, year, data):
         data = {'1': {'location': 'Toshkent', 'date': 'Dushanba, 1-Mart', 'prayer_times': {...}, ...}, ...}
     """
     try:
-        async with aiosqlite.connect(DATABASE_PATH, timeout=10) as db:  ## Added timeout for safety
+        # async with aiosqlite.connect(DATABASE_PATH, timeout=10) as db:  ## Added timeout for safety
             # Check if data is a coroutine and await it if necessary
-            if hasattr(data, '__await__'):
-                data = await data
+        if hasattr(data, '__await__'):
+            data = await data
 
-            for day, day_data in data.items():
-                date_str = f"{year}-{month:02d}-{int(day):02d}"
-                times_json = json.dumps(day_data)  ## Serialize the full day data
-                await db.execute(
+        for day, day_data in data.items():
+            date_str = f"{year}-{month:02d}-{int(day):02d}"
+            times_json = json.dumps(day_data)  ## Serialize the full day data
+            await facke_pooling.execute(
                     '''INSERT OR REPLACE INTO prayer_times 
                        (region, date, times) VALUES (?, ?, ?)''',
                     (region, date_str, times_json)
                 )
-            await db.commit()
-            logger.info(f"Saved prayer times for region {region}, month {month}-{year}")
+            # await db.commit()
+        logger.info(f"Saved prayer times for region {region}, month {month}-{year}")
     except Exception as e:
         logger.error(f"Error saving prayer times for {region}, {month}-{year}: {e}")
 

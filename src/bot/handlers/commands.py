@@ -1,17 +1,15 @@
 import asyncio
-
-from aiogram import Dispatcher, types, F
+from aiogram import Dispatcher, types, F, Router
 from src.bot.keyboards.navigation import get_main_keyboard, get_settings_keyboard, get_location_keyboard
 from src.bot.utils.calculations import calculate_exact_prayer, calculate_next_prayer_countdown
 from src.bot.utils.reminders import update_main_message, log_message, calculate_islamic_date
 from src.config.constants import PRAYER_EMOJIS
+from src.db.pooling import facke_pooling
 from src.scraping.prayer_times import fetch_cached_prayer_times
-from src.config.settings import DATABASE_PATH
 from datetime import datetime, timedelta
-import aiosqlite
-import logging
+from src.config.log_config import logger
 
-logger = logging.getLogger(__name__)
+router = Router()
 
 
 async def start_command(message: types.Message):
@@ -23,9 +21,7 @@ async def start_command(message: types.Message):
     await save_user(chat_id, username)
 
     # Check if user already has a location set
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        cursor = await db.execute('SELECT region FROM users WHERE chat_id = ?', (chat_id,))
-        region = await cursor.fetchone()
+    region = await facke_pooling.fetchone('SELECT region FROM users WHERE chat_id = ?', (chat_id,))
 
     # Send welcome message
     welcome_text = ("Assalomu alaykum! Namoz vaqtlari botiga xush kelibsiz🎉\n"
@@ -49,21 +45,21 @@ async def set_location_command(message: types.Message):
 
 async def save_user(chat_id, username):
     """Save user to database."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
+    try:
         # Check if user exists
-        cursor = await db.execute('SELECT chat_id FROM users WHERE chat_id = ?', (chat_id,))
-        user_exists = await cursor.fetchone()
+        user_exists = await facke_pooling.fetchone('SELECT chat_id FROM users WHERE chat_id = ?', (chat_id,))
 
         if user_exists:
             # Update username if user exists
-            await db.execute('UPDATE users SET username = ? WHERE chat_id = ?',
-                             (username, chat_id))
+            await facke_pooling.execute('UPDATE users SET username = ? WHERE chat_id = ?',
+                        (username, chat_id))
         else:
             # Insert new user
-            await db.execute('INSERT INTO users (chat_id, username) VALUES (?, ?)',
-                             (chat_id, username))
-
-        await db.commit()
+            await facke_pooling.execute('INSERT INTO users (chat_id, username) VALUES (?, ?)',
+                            (chat_id, username))
+    except Exception as e:
+        logger.error(f"Error saving user {chat_id}: {e}")
+        raise
 
 
 async def send_main_message(message, region=None, day_type='bugun'):
@@ -73,14 +69,14 @@ async def send_main_message(message, region=None, day_type='bugun'):
 
     # Check if region is provided; if not, fetch it from the database
     if not region:
-        async with aiosqlite.connect(DATABASE_PATH) as db:
-            cursor = await db.execute('SELECT region FROM users WHERE chat_id = ?', (chat_id,))
-            user_data = await cursor.fetchone()
-            if not user_data or not user_data[0]:
-                # Prompt user for location if no region is found
-                await set_location_command(message)
-                return
-            region = user_data[0]
+        # async with db_pool(DATABASE_PATH) as db:
+        #     cursor = await db.execute('SELECT region FROM users WHERE chat_id = ?', (chat_id,))
+        user_data = await facke_pooling.fetchone('SELECT region FROM users WHERE chat_id = ?', (chat_id,))
+        if not user_data or not user_data[0]:
+            # Prompt user for location if no region is found
+            await set_location_command(message)
+            return
+        region = user_data[0]
 
     # Set the current date and determine the target date based on day_type
     today = datetime.now()
@@ -105,7 +101,7 @@ async def send_main_message(message, region=None, day_type='bugun'):
         f"📍 {times['location']}\n"
         f"🗓 {times['date']}\n"
         f"☪️ {islamic_date}\n"
-        f"------------------------\n"
+        f"<code>-----------------</code>\n"
     )
 
     # Add prayer times table with emojis, bold, and tick for 'bugun', or just list for 'erta'
@@ -127,8 +123,7 @@ async def send_main_message(message, region=None, day_type='bugun'):
         for prayer, time_str in times['prayer_times'].items():
             emoji = PRAYER_EMOJIS.get(prayer, '⏰')
             message_text += f"{emoji} {prayer}: {time_str}\n"
-
-    message_text += f"------------------------\n"
+    message_text += f"<code>-----------------</code>\n"
 
     next_prayer = "N/A"
     next_prayer_time = "N/A"
@@ -171,8 +166,7 @@ async def tomorrow_handler(message: types.Message):
 
 async def settings_handler(message: types.Message):
     """Handle 'Sozlamalar' button press."""
-    await message.answer("Sozlamalar ⚙️", reply_markup=get_settings_keyboard())
-    # await settings_callback(message, reply_markup=get_settings_keyboard())
+    await message.answer("Sozlamalar", reply_markup=get_settings_keyboard())
 
 
 def register_commands(dp: Dispatcher):
@@ -182,7 +176,7 @@ def register_commands(dp: Dispatcher):
     # Register button handlers
     dp.message.register(today_handler, F.text == "Bugun")
     dp.message.register(tomorrow_handler, F.text == "Ertaga")
-    dp.message.register(settings_handler, F.text == "Sozlamalar")
+    dp.message.register(settings_handler, F.text == "⚙️ Sozlamalar")
 
 
 

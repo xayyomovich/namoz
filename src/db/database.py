@@ -1,9 +1,6 @@
 import os
-# from src.bot.bot import logger
 from src.config.settings import DATABASE_PATH
 import aiosqlite
-import hashlib
-import json
 
 
 async def initialize_database():
@@ -13,8 +10,7 @@ async def initialize_database():
     """
     db_dir = os.path.dirname(DATABASE_PATH)
     os.makedirs(db_dir, exist_ok=True)  # Creates database directory if it doesn’t exist.
-    from src.bot.bot import logger
-    # logger.info(f"Database path: {DATABASE_PATH}")
+    from src.config.log_config import logger
 
     async with aiosqlite.connect(DATABASE_PATH) as db:
         # Users table to store chat info

@@ -1,1 +1,0 @@
-from .prayer_service import getPrayerMessage

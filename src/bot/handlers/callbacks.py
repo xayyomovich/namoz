@@ -4,9 +4,10 @@ from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from src.bot.keyboards.navigation import get_main_keyboard, get_location_keyboard, get_settings_keyboard
-from src.bot.utils.reminders import reminders, logger
+from src.bot.utils.reminders import reminders
 from src.config.settings import DATABASE_PATH, REVERSE_LOCATION_MAP
 from src.bot.handlers.commands import send_main_message
+from src.config.log_config import logger
 
 # Store user state (could also use a database)
 user_state = {}  # {chat_id: {'level': 'main'|'settings'|'reminders', 'last_message_id': int}}
@@ -67,7 +68,7 @@ async def reminders_callback(update: types.CallbackQuery | types.Message):
             callback_data=f"toggle_{prayer}"
         ) for prayer in prayers[i:i + 3]]
         builder.row(*row)
-    builder.row(InlineKeyboardButton(text="Orqaga", callback_data="back"))
+    builder.row(InlineKeyboardButton(text="⬅️ Orqaga", callback_data="back"))
     await delete_previous_message(bot, chat_id)
     new_message = await bot.send_message(
         chat_id,
@@ -133,15 +134,15 @@ async def handle_settings_options(message: types.Message):
     text = message.text
 
     await delete_previous_message(message.bot, chat_id)
-    if text == "Oldindan eslatish":
+    if text == "🔔🔕Oldindan eslatish":
         await reminders_callback(message)
-    elif text == "Joylashuvni o'zgartirish":
+    elif text == "📍 Manzilni o'zgartirish":
         new_message = await message.answer(
             "Iltimos, yangi shahringizni tanlang",
             reply_markup=get_location_keyboard()
         )
         user_state[chat_id] = {'level': 'location', 'last_message_id': new_message.message_id}
-    elif text == "Orqaga":
+    elif text == "⬅️ Orqaga":
         new_message = await message.answer("Hozirgi namoz vaqtlari", reply_markup=get_main_keyboard())
         user_state[chat_id] = {'level': 'main', 'last_message_id': new_message.message_id}
         await send_main_message(message)
@@ -150,7 +151,7 @@ async def handle_settings_options(message: types.Message):
 def register_message_handlers(dp: Dispatcher):
     """Register message handlers for reply keyboard."""
     dp.message.register(handle_settings_options,
-                        F.text.in_(["Oldindan eslatish", "Joylashuvni o'zgartirish", "Orqaga"]))
+                        F.text.in_(["🔔🔕Oldindan eslatish", "📍 Manzilni o'zgartirish", "⬅️ Orqaga"]))
 
 
 def register_callbacks(dp: Dispatcher):

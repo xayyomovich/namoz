@@ -1,8 +1,7 @@
 import asyncio
-import logging
-from aiogram import Bot
+from src.config.log_config import logger
+from aiogram import Bot, Router
 from datetime import datetime, timedelta
-import aiosqlite
 import schedule
 import time
 import threading
@@ -10,14 +9,10 @@ import threading
 from src.bot.utils.calculations import calculate_islamic_date, calculate_exact_prayer, calculate_next_prayer_countdown
 from src.config.constants import UZBEK_MONTHS_EN, PRAYER_EMOJIS
 from src.config.settings import BOT_TOKEN, DATABASE_PATH
+from src.db.pooling import facke_pooling
 from src.scraping.prayer_times import fetch_cached_prayer_times, cache_monthly_prayer_times
 
-# Initialize logger
-# - Configures logging to capture info and errors with a detailed format.
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Initialize bot instance
+router = Router()
 bot = Bot(token=BOT_TOKEN)
 
 # Global dictionaries to track reminders and cached messages
@@ -152,11 +147,11 @@ async def send_new_main_message(chat_id, times, current_time, islamic_date):
 
     message_text = (
         f"{countdown_message}\n"
-        f"------------------------\n"
+        f"<code>-----------------</code>\n"
         f"📍 {times['location']}\n"
         f"🗓 {times['date']}\n"
         f"☪️ {islamic_date}\n"
-        f"------------------------\n"
+        f"<code>-----------------</code>\n"
     )
 
     exact_prayer = await calculate_exact_prayer(times['prayer_times'], current_time)
@@ -198,13 +193,9 @@ async def log_message(chat_id, message_id, message_type):
         message_type (str): Type of message (e.g., 'bugun').
     """
     try:
-
-        async with aiosqlite.connect(DATABASE_PATH, timeout=10) as db:
-            await db.execute(
-                'INSERT INTO message_log (chat_id, message_id, type, created_at) VALUES (?, ?, ?, ?)',
-                (chat_id, message_id, message_type, datetime.now().isoformat())
+        await facke_pooling.execute(
+            'INSERT INTO message_log (chat_id, message_id, type, created_at) VALUES (?, ?, ?, ?)',
+            (chat_id, message_id, message_type, datetime.now().isoformat())
             )
-            await db.commit()
-            # logger.info(f"Logged message {message_id} for chat {chat_id}")
     except Exception as e:
         logger.error(f"Error logging message: {e}")
