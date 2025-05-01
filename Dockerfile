@@ -13,5 +13,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of your bot's code
 COPY . .
 
+# Set environment variables
+ENV PORT=8080
+ENV PYTHONUNBUFFERED=1
+
 # Command to run your bot
 CMD ["python", "-m", "src.bot.bot"]
+
+
+
+
+
+
+
+
+
+

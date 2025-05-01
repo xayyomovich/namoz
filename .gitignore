@@ -10,6 +10,4 @@ database/prayer_times.db  # Exclude the DB file, created at runtime
 cache/
 .idea/
 .gitignore~
-src.tar
-src (2).tar
 
