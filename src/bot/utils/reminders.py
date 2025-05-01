@@ -1,14 +1,17 @@
 import asyncio
+
+from aiogram.exceptions import TelegramForbiddenError
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
 from src.config.log_config import logger
 from aiogram import Bot, Router
 from datetime import datetime, timedelta
-import schedule
-import time
-import threading
+from apscheduler.schedulers.background import BackgroundScheduler
+
 
 from src.bot.utils.calculations import calculate_islamic_date, calculate_exact_prayer, calculate_next_prayer_countdown
 from src.config.constants import UZBEK_MONTHS_EN, PRAYER_EMOJIS
-from src.config.settings import BOT_TOKEN, DATABASE_PATH
+from src.config.settings import BOT_TOKEN
 from src.db.pooling import facke_pooling
 from src.scraping.prayer_times import fetch_cached_prayer_times, cache_monthly_prayer_times
 
@@ -22,7 +25,6 @@ message_cache = {}  # Caches the main message data for each chat_id
 
 
 async def update_main_message(chat_id, message_id, times, next_prayer, next_prayer_time, islamic_date):
-    print("=-=-=-=-=-=-=-=-=-=-=-=update_main_message-=-=-=-=-=-=-=-=-=-=-=-=-=-=")
     """
     Update the main message with countdown and reminders.
     Args:
@@ -46,10 +48,8 @@ async def update_main_message(chat_id, message_id, times, next_prayer, next_pray
 
 
 async def _update_message_task(chat_id):
-    print("=-=-=-=-=-=-=-=-=-=-=-=_update_message_task-=-=-=-=-=-=-=-=-=-=-=-=-=-=")
     """
     Async task to periodically update the main message and handle reminders.
-    - Now recalculates the Islamic date dynamically during day transitions.
     """
     if chat_id not in message_cache:
         return
@@ -89,7 +89,7 @@ async def _update_message_task(chat_id):
                     message_cache[chat_id]['islamic_date'] = islamic_date
                 else:
                     logger.error(f"No cached data for {tomorrow_date} for {times['location']}")
-                    await asyncio.sleep(60)
+                    await asyncio.sleep(500)
                     continue
 
             # Update next prayer
@@ -114,13 +114,17 @@ async def _update_message_task(chat_id):
                     if reminder_enabled and not has_triggered:
                         reminder_triggered = True
                         reminders_triggered.setdefault(chat_id, {})[next_prayer] = current_date
-                        new_message = await send_new_main_message(chat_id, times, current_time, islamic_date)
                         try:
+                            new_message = await send_new_main_message(chat_id, times, current_time, islamic_date)
+                            if new_message is None:  # Indicates user blocked bot
+                                break
                             await bot.delete_message(chat_id, message_id)
-                        except Exception as e:
-                            logger.error(f"Error deleting message {message_id}: {e}")
-                        message_cache[chat_id]['message_id'] = new_message.message_id
-                        message_id = new_message.message_id
+                            message_cache[chat_id]['message_id'] = new_message.message_id
+                            message_id = new_message.message_id
+                        except TelegramForbiddenError as e:
+                            logger.error(f"User {chat_id} blocked bot: {e}")
+                            await facke_pooling.execute('DELETE FROM users WHERE chat_id = ?', (chat_id,))
+                            break  # Stop task for this chat_id
             await asyncio.sleep(60)
 
     except Exception as e:
@@ -130,7 +134,6 @@ async def _update_message_task(chat_id):
 
 
 async def send_new_main_message(chat_id, times, current_time, islamic_date):
-    print("=-=-=-=-=-=-=-=-=-=-=-=send_new_main_message-=-=-=-=-=-=-=-=-=-=-=-=-=-=")
     """Send a new main message for reminders.
     Args:
         chat_id (int): Telegram chat ID.
@@ -140,49 +143,52 @@ async def send_new_main_message(chat_id, times, current_time, islamic_date):
     Returns:
         Message: The sent message object.,
     """
-    current_date = datetime.now().strftime("%Y/%m/%d")
-    countdown_message, next_prayer, next_prayer_time, countdown = await calculate_next_prayer_countdown(
-        times['prayer_times'], times['location'], current_time, current_date
-    )
+    try:
+        current_date = times['date'].split(', ')[1].split('-')
+        month_num = UZBEK_MONTHS_EN[current_date[1]]
+        current_date = f"{datetime.now().year}-{month_num.zfill(2)}-{current_date[0].zfill(2)}"
+        countdown_message, next_prayer, next_prayer_time, countdown = await calculate_next_prayer_countdown(
+            times['prayer_times'], times['location'], current_time, current_date
+        )
 
-    message_text = (
-        f"{countdown_message}\n"
-        f"<code>-----------------</code>\n"
-        f"📍 {times['location']}\n"
-        f"🗓 {times['date']}\n"
-        f"☪️ {islamic_date}\n"
-        f"<code>-----------------</code>\n"
-    )
+        message_text = (
+            f"{countdown_message}\n"
+            f"<code>-----------------</code>\n"
+            f"📍 {times['location']}\n"
+            f"🗓 {times['date']}\n"
+            f"☪️ {islamic_date}\n"
+            f"<code>-----------------</code>\n"
+        )
 
-    exact_prayer = await calculate_exact_prayer(times['prayer_times'], current_time)
+        exact_prayer = await calculate_exact_prayer(times['prayer_times'], current_time, current_date)
+        # print(f"=-=-=-={current_time}=-=-=-=-rem=-=-=")
+        for prayer, time_str in times['prayer_times'].items():
+            emoji = PRAYER_EMOJIS.get(prayer, '⏰')
+            # print(f"=-=-=-={exact_prayer}=-=-=-=-rem=-=-=")
+            if prayer == exact_prayer:
+                message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b>      </blockquote>\n"
+            else:
+                message_text += f"{emoji} {prayer}: {time_str}\n"
 
-    for prayer, time_str in times['prayer_times'].items():
-        emoji = PRAYER_EMOJIS.get(prayer, '⏰')
-        if prayer == exact_prayer:
-            message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b>      </blockquote>\n"
-        else:
-            message_text += f"{emoji} {prayer}: {time_str}\n"
+        new_message = await bot.send_message(chat_id, message_text, parse_mode='HTML')
+        await log_message(chat_id, new_message.message_id, 'bugun')
 
-    new_message = await bot.send_message(chat_id, message_text, parse_mode='HTML')
-    await log_message(chat_id, new_message.message_id, 'bugun')
+        return new_message
+    except TelegramForbiddenError as e:
+        logger.error(f"User {chat_id} blocked bot: {e}")
+        await facke_pooling.execute('DELETE FROM users WHERE chat_id = ?', (chat_id,))
+        return None
+    except Exception as e:
+        logger.error(f"Error sending main message to {chat_id}: {e}")
+        return None
 
-    return new_message
 
-
-def run_scheduler(loop: asyncio.AbstractEventLoop):
+def run_scheduler():
     """Run the scheduler in the bot's event loop to avoid conflicts."""
-    if loop is None:
-        loop = asyncio.get_event_loop()
-
-    def schedule_tasks():
-        schedule.every(4).weeks.do(lambda: asyncio.run_coroutine_threadsafe(cache_monthly_prayer_times(), loop))
-
-        while True:
-            schedule.run_pending()
-            time.sleep(720)
-
-    scheduler_thread = threading.Thread(target=schedule_tasks, daemon=True)
-    scheduler_thread.start()
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(cache_monthly_prayer_times, 'interval', days=21)
+    scheduler.start()
+    logger.info("APScheduler started for prayer times caching")
 
 
 async def log_message(chat_id, message_id, message_type):

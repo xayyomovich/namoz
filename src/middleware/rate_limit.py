@@ -8,9 +8,9 @@ class TelegramRateLimiter:
         self.rate_limit = rate_limit
         self.per_seconds = per_seconds
         self.ban_duration = ban_duration
-        self.requests = {}  # Store request timestamps
+        self.requests = {}  # to store request timestamps
         self.banned_until = {}
-        self.ban_message_sent = {}  # Track ban message status
+        self.ban_message_sent = {}
 
     async def check_limit(self, chat_id):
         now = datetime.now()
@@ -29,7 +29,8 @@ class TelegramRateLimiter:
             self.requests[chat_id] = []
 
         # Remove requests older than per_seconds
-        self.requests[chat_id] = [ts for ts in self.requests[chat_id] if now - ts <= timedelta(seconds=self.per_seconds)]
+        self.requests[chat_id] = [ts for ts in self.requests[chat_id] if
+                                  now - ts <= timedelta(seconds=self.per_seconds)]
 
         # Add new request
         self.requests[chat_id].append(now)
@@ -42,7 +43,9 @@ class TelegramRateLimiter:
 
         return True, False
 
+
 telegram_limiter = TelegramRateLimiter(rate_limit=5, per_seconds=3, ban_duration=300)
+
 
 async def rate_limit_middleware(handler, event: Update, data: dict):
     chat_id = event.message.chat.id if event.message else event.callback_query.message.chat.id

@@ -4,7 +4,6 @@ from datetime import datetime
 from src.config.constants import LOCATION_MAP
 
 load_dotenv()
-
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
 

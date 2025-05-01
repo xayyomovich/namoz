@@ -1,0 +1,12 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.git
+.gitignore
+.env
+database/
+bot.log
+prayer_times.db
+.venv/
+logo.png

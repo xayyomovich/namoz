@@ -1,5 +1,7 @@
 import asyncio
 from aiogram import Dispatcher, types, F, Router
+from aiogram.exceptions import TelegramForbiddenError
+
 from src.bot.keyboards.navigation import get_main_keyboard, get_settings_keyboard, get_location_keyboard
 from src.bot.utils.calculations import calculate_exact_prayer, calculate_next_prayer_countdown
 from src.bot.utils.reminders import update_main_message, log_message, calculate_islamic_date
@@ -63,95 +65,103 @@ async def save_user(chat_id, username):
 
 
 async def send_main_message(message, region=None, day_type='bugun'):
-    print("=-=-=-=-=-=-=-=-=-=-=-=send_main_message-=-=-=-=-=-=-=-=-=-=-=-=-=-=")
     """Send or update the main message with prayer times."""
     chat_id = message.chat.id
 
-    # Check if region is provided; if not, fetch it from the database
-    if not region:
-        # async with db_pool(DATABASE_PATH) as db:
-        #     cursor = await db.execute('SELECT region FROM users WHERE chat_id = ?', (chat_id,))
-        user_data = await facke_pooling.fetchone('SELECT region FROM users WHERE chat_id = ?', (chat_id,))
-        if not user_data or not user_data[0]:
-            # Prompt user for location if no region is found
-            await set_location_command(message)
+    try:
+        # Check if region is provided; if not, fetch it from the database
+        if not region:
+            user_data = await facke_pooling.fetchone('SELECT region FROM users WHERE chat_id = ?', (chat_id,))
+            if not user_data or not user_data[0]:
+                # Prompt user for location if no region is found
+                await set_location_command(message)
+                return
+            region = user_data[0]
+
+        # Set the current date and determine the target date based on day_type
+        today = datetime.now()
+        date_str = today.strftime("%Y-%m-%d") if day_type == 'bugun' else \
+            (today + timedelta(days=1)).strftime("%Y-%m-%d")
+
+        # Fetch cached prayer times for the specified region and date
+        times = await fetch_cached_prayer_times(region, date_str)
+        if not times:
+            # Notify user if prayer times are unavailable
+            await message.answer("Namoz vaqtlari mavjud emas yoki keshda xatolik.")
             return
-        region = user_data[0]
 
-    # Set the current date and determine the target date based on day_type
-    today = datetime.now()
-    date_str = today.strftime("%Y-%m-%d") if day_type == 'bugun' else \
-        (today + timedelta(days=1)).strftime("%Y-%m-%d")
+        # Get current time for comparison with prayer times
+        current_time = datetime.now().strftime("%H:%M")
 
-    # Fetch cached prayer times for the specified region and date
-    times = await fetch_cached_prayer_times(region, date_str)
-    if not times:
-        # Notify user if prayer times are unavailable
-        await message.answer("Namoz vaqtlari mavjud emas yoki keshda xatolik.")
-        return
+        # Calculate Islamic (Hijri) date from the Gregorian date
+        islamic_date = await calculate_islamic_date(date_str)
 
-    # Get current time for comparison with prayer times
-    current_time = datetime.now().strftime("%H:%M")
+        # Start building the message with location, date, and Islamic date
+        message_text = (
+            f"📍 {times['location']}\n"
+            f"🗓 {times['date']}\n"
+            f"☪️ {islamic_date}\n"
+            f"<code>-----------------</code>\n"
+        )
 
-    # Calculate Islamic (Hijri) date from the Gregorian date
-    islamic_date = await calculate_islamic_date(date_str)
-
-    # Start building the message with location, date, and Islamic date
-    message_text = (
-        f"📍 {times['location']}\n"
-        f"🗓 {times['date']}\n"
-        f"☪️ {islamic_date}\n"
-        f"<code>-----------------</code>\n"
-    )
-
-    # Add prayer times table with emojis, bold, and tick for 'bugun', or just list for 'erta'
-    if day_type == 'bugun':
-        # Find the exact prayer time to now
-        exact_prayer = await calculate_exact_prayer(times['prayer_times'], current_time)
-
-        # Build prayer list with emojis, bolding exact time, and adding tick
-        for prayer, time_str in times['prayer_times'].items():
-            emoji = PRAYER_EMOJIS.get(prayer, '⏰')
-            if prayer == exact_prayer:
-                # Use blockquote with bold for the closest prayer
-                message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b>      </blockquote>\n"
-            else:
-                # Regular formatting for other prayers
+        # Add prayer times table with emojis, bold, and tick for 'bugun', or just list for 'erta'
+        if day_type == 'bugun':
+            # Find the exact prayer time to now
+            exact_prayer = await calculate_exact_prayer(times['prayer_times'], current_time, date_str)
+            # print(f"=-=-=-={exact_prayer}=-=-=-=-")
+            # print(f"=-=-=-={current_time}=-=-=-=-")
+            # Build prayer list with emojis, bolding exact time, and adding tick
+            for prayer, time_str in times['prayer_times'].items():
+                emoji = PRAYER_EMOJIS.get(prayer, '⏰')
+                if prayer == exact_prayer:
+                    # Use blockquote with bold for the closest prayer
+                    message_text += f"<blockquote><b>{emoji} {prayer}: {time_str}</b>      </blockquote>\n"
+                else:
+                    # Regular formatting for other prayers
+                    message_text += f"{emoji} {prayer}: {time_str}\n"
+        else:  # 'erta'
+            # Build simple prayer list with emojis for tomorrow
+            for prayer, time_str in times['prayer_times'].items():
+                emoji = PRAYER_EMOJIS.get(prayer, '⏰')
                 message_text += f"{emoji} {prayer}: {time_str}\n"
-    else:  # 'erta'
-        # Build simple prayer list with emojis for tomorrow
-        for prayer, time_str in times['prayer_times'].items():
-            emoji = PRAYER_EMOJIS.get(prayer, '⏰')
-            message_text += f"{emoji} {prayer}: {time_str}\n"
-    message_text += f"<code>-----------------</code>\n"
+        message_text += f"<code>-----------------</code>\n"
 
-    next_prayer = "N/A"
-    next_prayer_time = "N/A"
-    if day_type == 'bugun':
-        countdown_message, next_prayer, next_prayer_time, countdown = await calculate_next_prayer_countdown(
-            times['prayer_times'], region, current_time, date_str
-        )
-        message_text += countdown_message
-
-    # Send the formatted message with Markdown parsing for bold
-    sent_message = await message.answer(message_text, parse_mode='HTML')
-
-    # Log the message for future updates
-    await log_message(chat_id, sent_message.message_id, day_type)
-
-    # Schedule automatic updates for 'bugun' only
-    if day_type == 'bugun':
-        await asyncio.create_task(
-            update_main_message(
-                chat_id,
-                sent_message.message_id,
-                times,
-                next_prayer,
-                next_prayer_time,
-                islamic_date
+        next_prayer = "N/A"
+        next_prayer_time = "N/A"
+        if day_type == 'bugun':
+            countdown_message, next_prayer, next_prayer_time, countdown = await calculate_next_prayer_countdown(
+                times['prayer_times'], region, current_time, date_str
             )
-        )
-    return sent_message
+            message_text += countdown_message
+
+        # Send the formatted message with Markdown parsing for bold
+        sent_message = await message.answer(message_text, parse_mode='HTML')
+
+        # Log the message for future updates
+        await log_message(chat_id, sent_message.message_id, day_type)
+
+        # Schedule automatic updates for 'bugun' only
+        if day_type == 'bugun':
+            await asyncio.create_task(
+                update_main_message(
+                    chat_id,
+                    sent_message.message_id,
+                    times,
+                    next_prayer,
+                    next_prayer_time,
+                    islamic_date
+                )
+            )
+        return sent_message
+
+    except TelegramForbiddenError as e:
+        logger.error(f"User {chat_id} blocked bot: {e}")
+        await facke_pooling.execute('DELETE FROM users WHERE chat_id = ?', (chat_id,))
+        return None
+    except Exception as e:
+        logger.error(f"Error in send_main_message for chat {chat_id}: {e}")
+        await message.answer("Xatolik yuz berdi. Iltimos, keyinroq urinib ko'ring.")
+        return None
 
 
 async def today_handler(message: types.Message):

@@ -4,7 +4,6 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from src.config.settings import BOT_TOKEN
 from src.bot.handlers.callbacks import register_callbacks, register_message_handlers
-import threading
 
 from src.scraping.prayer_times import cache_monthly_prayer_times
 from src.bot.utils.reminders import run_scheduler
@@ -14,7 +13,6 @@ from src.bot.handlers import commands
 from src.config.log_config import logger
 
 default = DefaultBotProperties(parse_mode='Markdown')
-
 bot = Bot(token=BOT_TOKEN, default=default)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
@@ -23,19 +21,16 @@ dp = Dispatcher(storage=storage)
 async def on_startup(bot):
     """Handle bot startup event.
     - Logs startup, initializes the database, and caches monthly prayer times.
-    - Starts the scheduler thread for reminders and periodic tasks.
     """
     logger.info('Bot starting...')
     from src.db.database import initialize_database
-    await initialize_database()  # Ensure database is set up before proceeding.
+    await initialize_database()
     await facke_pooling.init()
     await cache_monthly_prayer_times()
     logger.info('Monthly prayer times cached successfully on startup!')
 
-    loop = asyncio.get_event_loop()  # Get the current event loop
-    scheduler_thread = threading.Thread(target=run_scheduler, args=(loop,), daemon=True)
-    scheduler_thread.start()
-    logger.info('Scheduler thread started successfully!')
+    run_scheduler()
+    logger.info('Scheduler started successfully!')
 
 
 async def on_shutdown():
