@@ -15,7 +15,6 @@ COPY . .
 
 # Set environment variables
 ENV PORT=8080
-ENV PYTHONUNBUFFERED=1
 
 # Command to run your bot
 CMD ["python", "-m", "src.bot.bot"]
